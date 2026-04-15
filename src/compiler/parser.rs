@@ -543,11 +543,15 @@ impl Parser {
 
         self.expect(&TokenType::Return_Keyword)?;
 
+        if self.matches(&TokenType::Semicolon) {
+            return Ok(Stmt::Return(None))
+        }
+        
         let expr = self.parse_expr()?;
 
         self.expect(&TokenType::Semicolon)?;
 
-        Ok(expr)
+        Ok(Stmt::Return(Some(expr)))
     }
     fn parse_var_decl_stmt(&mut self) -> Result<Stmt, String> {
         let ERROR_STRING_ROOT = "velc:Parser:parse_var_decl_stmt";
@@ -580,10 +584,80 @@ impl Parser {
 
         self.expect(&TokenType::Semicolon)?;
 
-        Ok(expr)
+        Ok(Stmt::Expr(expr))
+    }
+
+    fn parse_if(&mut self) -> Result<Stmt, String> {
+        let ERROR_STRING_ROOT = "velc:Parser:parse_if";
+
+        self.expect(&TokenType::If_Keyword)?;
+
+        self.expect(&TokenType::Lparen)?;
+
+        let expr = self.parse_expr()?;
+
+        self.expect(&TokenType::Rparen)?;
+
+        let then_br = Box::new(self.parse_stmt()?);
+
+        let else_br = if self.matches(&TokenType::Else_Keyword) {
+            Some(Box::new(self.parse_stmt()?))
+        }
+        else {
+            None
+        };
+
+        Ok(Stmt::If{
+            cond: expr,
+            then_branch: then_br,
+            else_branch: else_br
+        })
+    }
+    fn parse_while(&mut self) -> Result<Stmt, String> {
+        let ERROR_STRING_ROOT = "velc:Parser:parse_while";
+
+        self.expect(&TokenType::While_Keyword)?;
+
+        self.expect(&TokenType::Lparen)?;
+
+        let expr = self.parse_expr()?;
+
+        self.expect(&TokenType::Rparen)?;
+
+        let body = Box::new(self.parse_stmt()?);
+
+        Ok(Stmt::While{
+            cond: expr,
+            body: body
+        })
+
+    }
+    fn parse_for(&mut self) -> Result<Stmt, String> {
+        let ERROR_STRING_ROOT = "velc:Parser:parse_for";
+
+        self.expect(&TokenType::For_Keyword)?;
+
+        self.expect(&TokenType::Lparen)?;
+
+        //TOCONTINUE
+
+        self.expect(&TokenType::Rparen)?;
+
+
+
+
+    }
+    fn parse_asm(&mut self) -> Result<Stmt, String> {
+        let ERROR_STRING_ROOT = "velc:Parser:parse_asm";
+        match &self.get().Value {
+            TokenValue::String(text) => {
+                let out = text.clone();
+                self.advance();
+                Ok(TopLevel::Assembly(out))
+            }
+            _ => Err(format!("{ERROR_STRING_ROOT}:Assembly token missing string value"))
+        }
     }
 
 
-
 }
-
