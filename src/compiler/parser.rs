@@ -499,9 +499,9 @@ impl Parser {
             return Err(format!("{ERROR_STRING_ROOT}:Unexpected EOF"));
         }
 
-        let stmt = if let Ok(typename) = self.parse_type() {
+        let stmt = if self.is_type_keyword() {
             //VarDecl
-            return Err(format!("{ERROR_STRING_ROOT}:UNIMPEMENTED"));
+            self.parse_var_decl_stmt()?
         }
         else if self.check(&TokenType::Lbrace) {
             //Block
@@ -510,28 +510,35 @@ impl Parser {
         else {
             match self.get().Type {
                 TokenType::If_Keyword => {
-                    return Err(format!("{ERROR_STRING_ROOT}:UNIMPEMENTED"));
+                    self.parse_if_stmt()?
                 }
                 TokenType::Else_Keyword => {
-                    return Err(format!("{ERROR_STRING_ROOT}:UNIMPEMENTED"));
+                    return Err(format!("{ERROR_STRING_ROOT}:Unexpected else keyword"));
                 }
                 TokenType::While_Keyword => {
-                    return Err(format!("{ERROR_STRING_ROOT}:UNIMPEMENTED"));
+                    self.parse_while_stmt()?
                 }
                 TokenType::For_Keyword => {
-                    return Err(format!("{ERROR_STRING_ROOT}:UNIMPEMENTED"));
+                    self.parse_for_stmt()?
                 }
                 TokenType::Return_Keyword => {
-                    return Err(format!("{ERROR_STRING_ROOT}:UNIMPEMENTED"));
+                    self.parse_return_stmt()?
                 }
                 TokenType::Break_Keyword => {
-                    return Err(format!("{ERROR_STRING_ROOT}:UNIMPEMENTED"));
+                    self.advance();
+                    self.expect(&TokenType::Semicolon)?;
+                    Stmt::Break
                 }
                 TokenType::Continue_Keyword => {
-                    return Err(format!("{ERROR_STRING_ROOT}:UNIMPEMENTED"));
+                    self.advance();
+                    self.expect(&TokenType::Semicolon)?;
+                    Stmt::Continue
+                }
+                TokenType::Assembly => {
+                    self.parse_asm_stmt()?
                 }
                 _ => {
-                    return Err(format!("{ERROR_STRING_ROOT}:UNIMPEMENTED"));
+                    self.parse_expr_stmt()?
                 }
             }
         };
@@ -566,20 +573,17 @@ impl Parser {
             None
         };
     
-        if !self.matches(&TokenType::Semicolon) {
-            Err(format!("{ERROR_STRING_ROOT}:Expected semicolon"))
-        }
-        else {
-            Ok(Stmt::VarDecl(VarDecl {
-                Type: t,
-                name: id,
-                init: init,
-            }))
-        }
+        self.expect(&TokenType::Semicolon)?;
+
+        Ok(Stmt::VarDecl(VarDecl {
+            Type: t,
+            name: id,
+            init: init,
+        }))
 
     }
     fn parse_expr_stmt(&mut self) -> Result<Stmt, String> {
-        let ERROR_STRING_ROOT = "velc:Parser:parse_var_decl_stmt";
+        let ERROR_STRING_ROOT = "velc:Parser:parse_expr_stmt";
         let expr = self.parse_expr()?;
 
         self.expect(&TokenType::Semicolon)?;
@@ -587,14 +591,14 @@ impl Parser {
         Ok(Stmt::Expr(expr))
     }
 
-    fn parse_if(&mut self) -> Result<Stmt, String> {
-        let ERROR_STRING_ROOT = "velc:Parser:parse_if";
+    fn parse_if_stmt(&mut self) -> Result<Stmt, String> {
+        let ERROR_STRING_ROOT = "velc:Parser:parse_if_stmt";
 
         self.expect(&TokenType::If_Keyword)?;
 
         self.expect(&TokenType::Lparen)?;
 
-        let expr = self.parse_expr()?;
+        let cond = self.parse_expr()?;
 
         self.expect(&TokenType::Rparen)?;
 
@@ -608,55 +612,241 @@ impl Parser {
         };
 
         Ok(Stmt::If{
-            cond: expr,
+            cond: cond,
             then_branch: then_br,
             else_branch: else_br
         })
     }
-    fn parse_while(&mut self) -> Result<Stmt, String> {
-        let ERROR_STRING_ROOT = "velc:Parser:parse_while";
+    fn parse_while_stmt(&mut self) -> Result<Stmt, String> {
+        let ERROR_STRING_ROOT = "velc:Parser:parse_while_stmt";
 
         self.expect(&TokenType::While_Keyword)?;
 
         self.expect(&TokenType::Lparen)?;
 
-        let expr = self.parse_expr()?;
+        let cond = self.parse_expr()?;
 
         self.expect(&TokenType::Rparen)?;
 
         let body = Box::new(self.parse_stmt()?);
 
         Ok(Stmt::While{
-            cond: expr,
+            cond: cond,
             body: body
         })
 
     }
-    fn parse_for(&mut self) -> Result<Stmt, String> {
-        let ERROR_STRING_ROOT = "velc:Parser:parse_for";
+    fn parse_for_stmt(&mut self) -> Result<Stmt, String> {
+        let ERROR_STRING_ROOT = "velc:Parser:parse_for_stmt";
 
         self.expect(&TokenType::For_Keyword)?;
 
         self.expect(&TokenType::Lparen)?;
 
-        //TOCONTINUE
+        let init = if self.check(&TokenType::Semicolon) {
+            None
+        }
+        else if self.is_type_keyword() {
+            let t = self.parse_type()?;
+            let id = self.consume_identifier()?;
+
+            let init = if self.matches(&TokenType::Assign) {
+                Some(self.parse_expr()?)
+            }
+            else {
+                None
+            };
+
+            Some(ForInit::VarDecl(VarDecl {
+                Type: t,
+                name: id,
+                init: init
+            }))
+        }
+        else {
+            Some(ForInit::Expr(self.parse_expr()?))
+        };
+
+        self.expect(&TokenType::Semicolon)?;
+
+        let cond = if self.check(&TokenType::Semicolon) {
+            None
+        }
+        else {
+            Some(self.parse_expr()?)
+        };
+
+        self.expect(&TokenType::Semicolon)?;
+
+        let step = if self.check(&TokenType::Rparen) {
+            None
+        }
+        else {
+            Some(self.parse_expr()?)
+        };
 
         self.expect(&TokenType::Rparen)?;
 
+        let body = Box::new(self.parse_stmt()?);
 
-
+        Ok(Stmt::For {
+            init,
+            cond,
+            step,
+            body,
+        })
 
     }
-    fn parse_asm(&mut self) -> Result<Stmt, String> {
-        let ERROR_STRING_ROOT = "velc:Parser:parse_asm";
+    fn parse_asm_stmt(&mut self) -> Result<Stmt, String> {
+        let ERROR_STRING_ROOT = "velc:Parser:parse_asm_stmt";
         match &self.get().Value {
             TokenValue::String(text) => {
                 let out = text.clone();
                 self.advance();
-                Ok(TopLevel::Assembly(out))
+                Ok(Stmt::Assembly(out))
             }
             _ => Err(format!("{ERROR_STRING_ROOT}:Assembly token missing string value"))
         }
+    }
+
+    fn parse_expr(&mut self) -> Result<Expr, String> {
+        self.parse_assignment()
+    }
+
+    fn parse_primary(&mut self) -> Result<Expr, String> {
+        let ERROR_STRING_ROOT = "velc:Parser:parse_primary";
+    
+        match self.get().Type {
+            TokenType::True_Keyword => {
+                self.advance();
+                Ok(Expr::BoolLiteral(true))
+            }
+            TokenType::False_Keyword => {
+                self.advance();
+                Ok(Expr::BoolLiteral(false))
+            }
+            TokenType::Int_Literal => {
+                match &self.get().Value {
+                    TokenValue::Int(v) => {
+                        let out = *v;
+                        self.advance();
+                        Ok(Expr::IntLiteral(out))
+                    }
+                    _ => Err(format!("{ERROR_STRING_ROOT}:Int literal missing int value"))
+                }
+            }
+            TokenType::Float_Literal => {
+                match &self.get().Value {
+                    TokenValue::Float(v) => {
+                        let out = *v;
+                        self.advance();
+                        Ok(Expr::FloatLiteral(out))
+                    }
+                    _ => Err(format!("{ERROR_STRING_ROOT}:Float literal missing float value"))
+                }
+            }
+            TokenType::Char_Literal => {
+                match &self.get().Value {
+                    TokenValue::Char(v) => {
+                        let out = *v;
+                        self.advance();
+                        Ok(Expr::CharLiteral(out))
+                    }
+                    _ => Err(format!("{ERROR_STRING_ROOT}:Char literal missing char value"))
+                }
+            }
+            TokenType::String_Literal => {
+                match &self.get().Value {
+                    TokenValue::String(text) => {
+                        let out = text.clone();
+                        self.advance();
+                        Ok(Expr::StringLiteral(out))
+                    }
+                    _ => Err(format!("{ERROR_STRING_ROOT}:String literal missing string value"))
+                }
+            }
+            TokenType::Identifier => {
+                match &self.get().Value {
+                    TokenValue::String(name) => {
+                        let out = name.clone();
+                        self.advance();
+                        Ok(Expr::Identifier(out))
+                    }
+                    _ => Err(format!("{ERROR_STRING_ROOT}:Identifier token missing string value"))
+                }
+            }
+            TokenType::Lparen => {
+                self.advance();
+                let expr = self.parse_expr()?;
+                self.expect(&TokenType::Rparen)?;
+                Ok(Expr::Grouping(Box::new(expr)))
+            }
+            _ => Err(format!("{ERROR_STRING_ROOT}:Expected expression"))
+        }
+    }
+    fn parse_postfix(&mut self) -> Result<Expr, String> {
+        let ERROR_STRING_ROOT = "velc:Parser:parse_postfix";
+    
+        let mut expr = self.parse_primary()?;
+    
+        loop {
+            if self.matches(&TokenType::Lparen) {
+                let mut args = Vec::new();
+    
+                if !self.check(&TokenType::Rparen) {
+                    loop {
+                        args.push(self.parse_expr()?);
+    
+                        if self.matches(&TokenType::Comma) {
+                            continue;
+                        }
+    
+                        break;
+                    }
+                }
+    
+                self.expect(&TokenType::Rparen)?;
+    
+                expr = Expr::Call {
+                    callee: Box::new(expr),
+                    args,
+                };
+            }
+            else if self.matches(&TokenType::Lbracket) {
+                let index = self.parse_expr()?;
+                self.expect(&TokenType::RBracket)?;
+    
+                expr = Expr::Index {
+                    base: Box::new(expr),
+                    index: Box::new(index),
+                };
+            }
+            else if self.matches(&TokenType::Period) {
+                let field = self.consume_identifier()?;
+    
+                expr = Expr::Member {
+                    base: Box::new(expr),
+                    field,
+                };
+            }
+            else if self.matches(&TokenType::Inc) {
+                expr = Expr::Postfix {
+                    op: PostfixOp::Inc,
+                    expr: Box::new(expr),
+                };
+            }
+            else if self.matches(&TokenType::Dec) {
+                expr = Expr::Postfix {
+                    op: PostfixOp::Dec,
+                    expr: Box::new(expr),
+                };
+            }
+            else {
+                break;
+            }
+        }
+    
+        Ok(expr)
     }
 
 
