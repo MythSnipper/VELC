@@ -186,8 +186,7 @@ Options:
             //parser
             self.parser = parser::Parser::from_tokens(&self.tokens);
             self.program = self.parser.run()?;
-
-
+            println!("{:#?}", self.program);
             //semantic analyzer
 
 

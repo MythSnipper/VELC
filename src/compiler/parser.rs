@@ -72,6 +72,8 @@ pub enum PrefixOp {
     Dec,
     Plus,
     Neg,
+    Ref,
+    Deref,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PostfixOp {
@@ -220,12 +222,6 @@ pub enum Expr {
         field: String,
     },
 }
-
-
-
-
-
-
 
 
 #[derive(Default, Debug, Clone)]
@@ -709,10 +705,510 @@ impl Parser {
         }
     }
 
+
+/*
+parse_expr
+  -> parse_assignment
+
+parse_assignment
+  -> parse_logical_or
+  -> if assignment operator, recurse parse_assignment on right
+
+parse_logical_or
+  -> parse_logical_xor
+
+parse_logical_xor
+  -> parse_logical_and
+
+parse_logical_and
+  -> parse_bitwise_or
+
+parse_bitwise_or
+  -> parse_bitwise_xor
+
+parse_bitwise_xor
+  -> parse_bitwise_and
+
+parse_bitwise_and
+  -> parse_equality
+
+parse_equality
+  -> parse_relational
+
+parse_relational
+  -> parse_shift
+
+parse_shift
+  -> parse_additive
+
+parse_additive
+  -> parse_multiplicative
+
+parse_multiplicative
+  -> parse_unary
+
+parse_unary
+  -> parse_postfix
+
+parse_postfix
+  -> parse_primary
+  */
+
     fn parse_expr(&mut self) -> Result<Expr, String> {
         self.parse_assignment()
     }
 
+    fn is_valid_assignment_target(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::Identifier(_) => true,
+            Expr::Index { .. } => true,
+            Expr::Member { .. } => true,
+            Expr::Prefix { op: PrefixOp::Deref, .. } => true,
+            _ => false,
+        }
+    }
+
+    fn parse_assignment(&mut self) -> Result<Expr, String> {
+
+        let ERROR_STRING_ROOT = "velc:Parser:parse_assignment";
+    
+        let left = self.parse_logical_or()?;
+    
+        let op = if self.matches(&TokenType::Assign) {
+            Some(AssignOp::Assign)
+        }
+        else if self.matches(&TokenType::Add_Assign) {
+            Some(AssignOp::AddAssign)
+        }
+        else if self.matches(&TokenType::Sub_Assign) {
+            Some(AssignOp::SubAssign)
+        }
+        else if self.matches(&TokenType::Mul_Assign) {
+            Some(AssignOp::MulAssign)
+        }
+        else if self.matches(&TokenType::Div_Assign) {
+            Some(AssignOp::DivAssign)
+        }
+        else if self.matches(&TokenType::Mod_Assign) {
+            Some(AssignOp::ModAssign)
+        }
+        else if self.matches(&TokenType::And_Assign) {
+            Some(AssignOp::AndAssign)
+        }
+        else if self.matches(&TokenType::Or_Assign) {
+            Some(AssignOp::OrAssign)
+        }
+        else if self.matches(&TokenType::Xor_Assign) {
+            Some(AssignOp::XorAssign)
+        }
+        else if self.matches(&TokenType::Lshift_Assign) {
+            Some(AssignOp::LshiftAssign)
+        }
+        else if self.matches(&TokenType::Rshift_Assign) {
+            Some(AssignOp::RshiftAssign)
+        }
+        else if self.matches(&TokenType::Not_Assign) {
+            Some(AssignOp::NotAssign)
+        }
+        else {
+            None
+        };
+    
+        if let Some(op) = op {
+            if !self.is_valid_assignment_target(&left) {
+                return Err(format!("{ERROR_STRING_ROOT}:Invalid assignment target"));
+            }
+    
+            let right = self.parse_assignment()?;
+    
+            Ok(Expr::Assign {
+                left: Box::new(left),
+                op,
+                right: Box::new(right),
+            })
+        }
+        else {
+            Ok(left)
+        }
+    }
+    
+    fn parse_logical_or(&mut self) -> Result<Expr, String> {
+        let mut expr = self.parse_logical_xor()?;
+    
+        while self.matches(&TokenType::Or_Logical) {
+            let right = self.parse_logical_xor()?;
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: BinaryOp::LogicalOr,
+                right: Box::new(right),
+            };
+        }
+    
+        Ok(expr)
+    }
+    fn parse_logical_xor(&mut self) -> Result<Expr, String> {
+        let mut expr = self.parse_logical_and()?;
+    
+        while self.matches(&TokenType::Xor_Logical) {
+            let right = self.parse_logical_and()?;
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: BinaryOp::LogicalXor,
+                right: Box::new(right),
+            };
+        }
+    
+        Ok(expr)
+    }
+    fn parse_logical_and(&mut self) -> Result<Expr, String> {
+        let mut expr = self.parse_bitwise_or()?;
+    
+        while self.matches(&TokenType::And_Logical) {
+            let right = self.parse_bitwise_or()?;
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: BinaryOp::LogicalAnd,
+                right: Box::new(right),
+            };
+        }
+    
+        Ok(expr)
+    }
+    
+    fn parse_bitwise_or(&mut self) -> Result<Expr, String> {
+        let mut expr = self.parse_bitwise_xor()?;
+    
+        while self.matches(&TokenType::Or_Bitwise) {
+            let right = self.parse_bitwise_xor()?;
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: BinaryOp::BitwiseOr,
+                right: Box::new(right),
+            };
+        }
+    
+        Ok(expr)
+    }
+    fn parse_bitwise_xor(&mut self) -> Result<Expr, String> {
+        let mut expr = self.parse_bitwise_and()?;
+    
+        while self.matches(&TokenType::Xor_Bitwise) {
+            let right = self.parse_bitwise_and()?;
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: BinaryOp::BitwiseXor,
+                right: Box::new(right),
+            };
+        }
+    
+        Ok(expr)
+    }
+    fn parse_bitwise_and(&mut self) -> Result<Expr, String> {
+        let mut expr = self.parse_equality()?;
+    
+        while self.matches(&TokenType::And_Bitwise) {
+            let right = self.parse_equality()?;
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: BinaryOp::BitwiseAnd,
+                right: Box::new(right),
+            };
+        }
+    
+        Ok(expr)
+    }
+    
+    fn parse_equality(&mut self) -> Result<Expr, String> {
+        let mut expr = self.parse_relational()?;
+    
+        loop {
+            let op = if self.matches(&TokenType::Eq) {
+                Some(BinaryOp::Eq)
+            }
+            else if self.matches(&TokenType::Neq) {
+                Some(BinaryOp::Neq)
+            }
+            else {
+                None
+            };
+    
+            if let Some(op) = op {
+                let right = self.parse_relational()?;
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op,
+                    right: Box::new(right),
+                };
+            }
+            else {
+                break;
+            }
+        }
+    
+        Ok(expr)
+    }
+    fn parse_relational(&mut self) -> Result<Expr, String> {
+        let mut expr = self.parse_shift()?;
+    
+        loop {
+            let op = if self.matches(&TokenType::Lt) {
+                Some(BinaryOp::Lt)
+            }
+            else if self.matches(&TokenType::Gt) {
+                Some(BinaryOp::Gt)
+            }
+            else if self.matches(&TokenType::Lte) {
+                Some(BinaryOp::Lte)
+            }
+            else if self.matches(&TokenType::Gte) {
+                Some(BinaryOp::Gte)
+            }
+            else {
+                None
+            };
+    
+            if let Some(op) = op {
+                let right = self.parse_shift()?;
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op,
+                    right: Box::new(right),
+                };
+            }
+            else {
+                break;
+            }
+        }
+    
+        Ok(expr)
+    }
+    
+    fn parse_shift(&mut self) -> Result<Expr, String> {
+
+        let mut expr = self.parse_additive()?;
+    
+        loop {
+            let op = if self.matches(&TokenType::Lshift) {
+                Some(BinaryOp::Lshift)
+            }
+            else if self.matches(&TokenType::Rshift) {
+                Some(BinaryOp::Rshift)
+            }
+            else {
+                None
+            };
+    
+            if let Some(op) = op {
+                let right = self.parse_additive()?;
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op,
+                    right: Box::new(right),
+                };
+            }
+            else {
+                break;
+            }
+        }
+    
+        Ok(expr)
+    }
+    
+    fn parse_additive(&mut self) -> Result<Expr, String> {
+        let mut expr = self.parse_multiplicative()?;
+    
+        loop {
+            let op = if self.matches(&TokenType::Add) {
+                Some(BinaryOp::Add)
+            }
+            else if self.matches(&TokenType::Sub) {
+                Some(BinaryOp::Sub)
+            }
+            else {
+                None
+            };
+    
+            if let Some(op) = op {
+                let right = self.parse_multiplicative()?;
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op,
+                    right: Box::new(right),
+                };
+            }
+            else {
+                break;
+            }
+        }
+    
+        Ok(expr)
+    }
+    fn parse_multiplicative(&mut self) -> Result<Expr, String> {
+        let mut expr = self.parse_unary()?;
+    
+        loop {
+            let op = if self.matches(&TokenType::Asterisk) {
+                Some(BinaryOp::Mul)
+            }
+            else if self.matches(&TokenType::Div) {
+                Some(BinaryOp::Div)
+            }
+            else if self.matches(&TokenType::Mod) {
+                Some(BinaryOp::Mod)
+            }
+            else {
+                None
+            };
+    
+            if let Some(op) = op {
+                let right = self.parse_unary()?;
+                expr = Expr::Binary {
+                    left: Box::new(expr),
+                    op,
+                    right: Box::new(right),
+                };
+            }
+            else {
+                break;
+            }
+        }
+    
+        Ok(expr)
+    }
+
+    fn parse_unary(&mut self) -> Result<Expr, String> {
+        if self.matches(&TokenType::Add) {
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Prefix {
+                op: PrefixOp::Plus,
+                expr: Box::new(expr),
+            });
+        }
+    
+        if self.matches(&TokenType::Sub) {
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Prefix {
+                op: PrefixOp::Neg,
+                expr: Box::new(expr),
+            });
+        }
+    
+        if self.matches(&TokenType::Not_Logical) {
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Prefix {
+                op: PrefixOp::LogicalNot,
+                expr: Box::new(expr),
+            });
+        }
+    
+        if self.matches(&TokenType::Not_Bitwise) {
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Prefix {
+                op: PrefixOp::BitwiseNot,
+                expr: Box::new(expr),
+            });
+        }
+    
+        if self.matches(&TokenType::Inc) {
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Prefix {
+                op: PrefixOp::Inc,
+                expr: Box::new(expr),
+            });
+        }
+    
+        if self.matches(&TokenType::Dec) {
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Prefix {
+                op: PrefixOp::Dec,
+                expr: Box::new(expr),
+            });
+        }
+    
+        if self.matches(&TokenType::And_Bitwise) {
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Prefix {
+                op: PrefixOp::Ref,
+                expr: Box::new(expr),
+            });
+        }
+    
+        if self.matches(&TokenType::Asterisk) {
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Prefix {
+                op: PrefixOp::Deref,
+                expr: Box::new(expr),
+            });
+        }
+
+        self.parse_postfix()
+    }
+    
+    fn parse_postfix(&mut self) -> Result<Expr, String> {
+        let ERROR_STRING_ROOT = "velc:Parser:parse_postfix";
+    
+        let mut expr = self.parse_primary()?;
+    
+        loop {
+            if self.matches(&TokenType::Lparen) {
+                let mut args = Vec::new();
+    
+                if !self.check(&TokenType::Rparen) {
+                    loop {
+                        args.push(self.parse_expr()?);
+    
+                        if self.matches(&TokenType::Comma) {
+                            continue;
+                        }
+    
+                        break;
+                    }
+                }
+    
+                self.expect(&TokenType::Rparen)?;
+    
+                expr = Expr::Call {
+                    callee: Box::new(expr),
+                    args,
+                };
+            }
+            else if self.matches(&TokenType::Lbracket) {
+                let index = self.parse_expr()?;
+                self.expect(&TokenType::Rbracket)?;
+    
+                expr = Expr::Index {
+                    base: Box::new(expr),
+                    index: Box::new(index),
+                };
+            }
+            else if self.matches(&TokenType::Period) {
+                let field = self.consume_identifier()?;
+    
+                expr = Expr::Member {
+                    base: Box::new(expr),
+                    field,
+                };
+            }
+            else if self.matches(&TokenType::Inc) {
+                expr = Expr::Postfix {
+                    op: PostfixOp::Inc,
+                    expr: Box::new(expr),
+                };
+            }
+            else if self.matches(&TokenType::Dec) {
+                expr = Expr::Postfix {
+                    op: PostfixOp::Dec,
+                    expr: Box::new(expr),
+                };
+            }
+            else {
+                break;
+            }
+        }
+    
+        Ok(expr)
+    }
+    
     fn parse_primary(&mut self) -> Result<Expr, String> {
         let ERROR_STRING_ROOT = "velc:Parser:parse_primary";
     
@@ -784,70 +1280,5 @@ impl Parser {
             _ => Err(format!("{ERROR_STRING_ROOT}:Expected expression"))
         }
     }
-    fn parse_postfix(&mut self) -> Result<Expr, String> {
-        let ERROR_STRING_ROOT = "velc:Parser:parse_postfix";
-    
-        let mut expr = self.parse_primary()?;
-    
-        loop {
-            if self.matches(&TokenType::Lparen) {
-                let mut args = Vec::new();
-    
-                if !self.check(&TokenType::Rparen) {
-                    loop {
-                        args.push(self.parse_expr()?);
-    
-                        if self.matches(&TokenType::Comma) {
-                            continue;
-                        }
-    
-                        break;
-                    }
-                }
-    
-                self.expect(&TokenType::Rparen)?;
-    
-                expr = Expr::Call {
-                    callee: Box::new(expr),
-                    args,
-                };
-            }
-            else if self.matches(&TokenType::Lbracket) {
-                let index = self.parse_expr()?;
-                self.expect(&TokenType::RBracket)?;
-    
-                expr = Expr::Index {
-                    base: Box::new(expr),
-                    index: Box::new(index),
-                };
-            }
-            else if self.matches(&TokenType::Period) {
-                let field = self.consume_identifier()?;
-    
-                expr = Expr::Member {
-                    base: Box::new(expr),
-                    field,
-                };
-            }
-            else if self.matches(&TokenType::Inc) {
-                expr = Expr::Postfix {
-                    op: PostfixOp::Inc,
-                    expr: Box::new(expr),
-                };
-            }
-            else if self.matches(&TokenType::Dec) {
-                expr = Expr::Postfix {
-                    op: PostfixOp::Dec,
-                    expr: Box::new(expr),
-                };
-            }
-            else {
-                break;
-            }
-        }
-    
-        Ok(expr)
-    }
-
 
 }

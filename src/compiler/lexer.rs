@@ -47,7 +47,7 @@ pub enum TokenType {
     Lbrace,     // {
     Rbrace,     // }
     Lbracket,   // [
-    RBracket,   // ]
+    Rbracket,   // ]
     Period,     // .
 
     //operators
@@ -732,7 +732,7 @@ impl Lexer {
             '{' => TokenType::Lbrace,
             '}' => TokenType::Rbrace,
             '[' => TokenType::Lbracket,
-            ']' => TokenType::RBracket,
+            ']' => TokenType::Rbracket,
             '.' => TokenType::Period,
             _ => {
                 return Err(format!("{ERROR_STRING_ROOT}:Invalid punctuation scanned"));
