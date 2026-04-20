@@ -319,7 +319,7 @@ impl Lexer {
                     self.scan_operator(TokenType::Not_Logical, 1)?
                 }
                 _ => {
-                    return Err(format!("{ERROR_STRING_ROOT}:Invalid character"));
+                    return self.error(ERROR_STRING_ROOT, "Invalid character");
                 }
             };
             if new_token.Type != TokenType::None {
@@ -420,7 +420,7 @@ impl Lexer {
 
         if text.is_empty() {
             //nothing scanned, error
-            Err(format!("{ERROR_STRING_ROOT}:Nothing scanned"))
+            self.error(ERROR_STRING_ROOT, "Nothing scanned")
         }
         else{
             if new_token.Type == TokenType::Identifier {
@@ -462,7 +462,7 @@ impl Lexer {
         }
 
         if text.is_empty() {
-            Err(format!("{ERROR_STRING_ROOT}:Nothing scanned"))
+            self.error(ERROR_STRING_ROOT, "Nothing scanned")
         }
         else{
             new_token.Type = if is_float {
@@ -473,13 +473,17 @@ impl Lexer {
             };
 
             new_token.Value = if is_float {
-                let value = text.parse::<f64>()
-                .map_err(|e| format!("{ERROR_STRING_ROOT}:{}", e))?;
-                TokenValue::Float(value)
+                let value = text.parse::<f64>();
+                if let Err(e) = value {
+                    return self.error(ERROR_STRING_ROOT, &format!("{:?}", e));
+                }
+                TokenValue::Float(value.unwrap())
             } else {
-                let value = text.parse::<i64>()
-                .map_err(|e| format!("{ERROR_STRING_ROOT}:{}", e))?;
-                TokenValue::Int(value)
+                let value = text.parse::<i64>();
+                if let Err(e) = value {
+                    return self.error(ERROR_STRING_ROOT, &format!("{:?}", e));
+                }
+                TokenValue::Int(value.unwrap())
             };
             Ok(new_token)
         }
@@ -494,7 +498,7 @@ impl Lexer {
         let mut text = String::new();
 
         if self.get() != '"' {
-            return Err(format!("{ERROR_STRING_ROOT}:Expected opening \" for string literal"));
+            return self.error(ERROR_STRING_ROOT, "Expected opening \" for string literal");
         }
         self.advance();
 
@@ -527,12 +531,13 @@ impl Lexer {
                         text.push(escaped);
                     }
                     else {
-                        return Err(format!("{ERROR_STRING_ROOT}:Unterminated escape sequence"));
+                        return self.error(ERROR_STRING_ROOT, "Unterminated escape sequence");
+                        
                     }
                     self.advance();
                 }
                 '\n' => {
-                    return Err(format!("{ERROR_STRING_ROOT}:Unterminated string literal"));
+                    return self.error(ERROR_STRING_ROOT, "Unterminated string literal");
                 }
                 _ => {
                     text.push(ch);
@@ -540,7 +545,7 @@ impl Lexer {
                 }
             }
         }
-        return Err(format!("{ERROR_STRING_ROOT}:Expected closing \" for string literal"));
+        return self.error(ERROR_STRING_ROOT, "Expected closing \" for string literal");
     }
     fn scan_char_literal(&mut self) -> Result<Token, String> {
         let ERROR_STRING_ROOT = "velc:Lexer:scan_char_literal";
@@ -552,17 +557,17 @@ impl Lexer {
         let text: char;
 
         if self.get() != '\'' {
-            return Err(format!("{ERROR_STRING_ROOT}:Expected opening \' for char literal"));
+            return self.error(ERROR_STRING_ROOT, "Expected opening \' for char literal");
         }
         self.advance();
         if self.is_at_end() {
-            return Err(format!("{ERROR_STRING_ROOT}:Expected closing \' for char literal"));
+            return self.error(ERROR_STRING_ROOT, "Expected closing \' for char literal");
         }
 
         let ch = self.get();
         match ch {
             '\'' => {
-                return Err(format!("{ERROR_STRING_ROOT}:No char scanned"));
+                return self.error(ERROR_STRING_ROOT, "No char scanned");
             }
             '\\' => {
                 self.advance();
@@ -583,12 +588,12 @@ impl Lexer {
                     text = escaped;
                 }
                 else {
-                    return Err(format!("{ERROR_STRING_ROOT}:Unterminated escape sequence"));
+                    return self.error(ERROR_STRING_ROOT, "Unterminated escape sequence");
                 }
                 self.advance();
             }
             '\n' | '\t' | '\r' => {
-                return Err(format!("{ERROR_STRING_ROOT}:Unterminated char literal"));
+                return self.error(ERROR_STRING_ROOT, "Unterminated char literal");
             }
             _ => {
                 text = ch;
@@ -597,7 +602,7 @@ impl Lexer {
         }
 
         if self.is_at_end() {
-            return Err(format!("{ERROR_STRING_ROOT}:Expected closing ' for char literal"));
+            return self.error(ERROR_STRING_ROOT, "Expected closing \' for char literal");
         }
 
         let ch = self.get();
@@ -609,10 +614,10 @@ impl Lexer {
                 return Ok(new_token);
             }
             '\n' => {
-                return Err(format!("{ERROR_STRING_ROOT}:Unterminated char literal"));
+                return self.error(ERROR_STRING_ROOT, "Unterminated char literal");
             }
             _ => {
-                return Err(format!("{ERROR_STRING_ROOT}:Character literal cannot have multiple characters"));
+                return self.error(ERROR_STRING_ROOT, "Character literal cannot have multiple characters");
             }
         }
     }
@@ -674,7 +679,7 @@ impl Lexer {
             }
             self.advance();
         }
-        Err(format!("{ERROR_STRING_ROOT}:Unterminated multiline assembly"))
+        self.error(ERROR_STRING_ROOT, "Unterminated multiline assembly")
     }
 
     fn scan_comment_single(&mut self) -> Result<Token, String> {
@@ -714,7 +719,7 @@ impl Lexer {
                 self.advance();
             }
         }
-        Err(format!("{ERROR_STRING_ROOT}:Unterminated multiline comment"))
+        self.error(ERROR_STRING_ROOT, "Unterminated multiline comment")
     }
 
     fn scan_punctuation(&mut self) -> Result<Token, String> {
@@ -735,7 +740,7 @@ impl Lexer {
             ']' => TokenType::Rbracket,
             '.' => TokenType::Period,
             _ => {
-                return Err(format!("{ERROR_STRING_ROOT}:Invalid punctuation scanned"));
+                return self.error(ERROR_STRING_ROOT, "Invalid punctuation scanned");
             }
         };
 
@@ -769,4 +774,7 @@ impl Lexer {
         Ok(Token{Type: TokenType::None, Value: TokenValue::None, Span: TokenSpan::default()})
     }
 
+    fn error<T>(&mut self, base: &str, err: &str) -> Result<T, String> {
+        Err(format!("{base}:{err} pos {}:{}", self.row, self.col))
+    }
 }

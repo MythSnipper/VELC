@@ -121,9 +121,6 @@ pub enum AssignOp {
     NotAssign,
 }
 
-
-
-
 //Statements
 #[derive(Debug, Clone)]
 pub struct VarDecl {
@@ -301,7 +298,7 @@ impl Parser {
             Ok(self.advance().clone())
         }
         else {
-            Err(format!("{ERROR_STRING_ROOT}:Expected {:?} token", expected))
+            self.error(ERROR_STRING_ROOT, &format!("Expected {:?} token", expected))
         }
     }
     fn is_type_keyword(&self) -> bool {
@@ -340,7 +337,7 @@ impl Parser {
             TokenType::Float64_Keyword => TypeName::Builtin(BuiltinType::Float64),
             TokenType::String_Keyword => TypeName::Builtin(BuiltinType::String),
             TokenType::Void_Keyword => TypeName::Builtin(BuiltinType::Void),
-            _ => return Err(format!("{ERROR_STRING_ROOT}:Expected type keyword")),
+            _ => return self.error(ERROR_STRING_ROOT, "Expected type keyword")
         };
         self.advance();
     
@@ -354,7 +351,7 @@ impl Parser {
     fn consume_identifier(&mut self) -> Result<String, String> {
         let ERROR_STRING_ROOT = "velc:Parser:consume_identifier";
         if self.get().Type != TokenType::Identifier {
-            return Err(format!("{ERROR_STRING_ROOT}:Current token is not an identifier"));
+            return self.error(ERROR_STRING_ROOT, "Current token is not an identifier");
         }
     
         match &self.get().Value {
@@ -363,7 +360,7 @@ impl Parser {
                 self.advance();
                 Ok(out)
             }
-            _ => Err(format!("{ERROR_STRING_ROOT}:Identifier token missing string value")),
+            _ => self.error(ERROR_STRING_ROOT, "Identifier token missing string value")
         }
     }
 
@@ -398,7 +395,7 @@ impl Parser {
                 return self.parse_global_var_decl(Type, id);
             }
         }
-        Err(format!("{ERROR_STRING_ROOT}:Expected type keyword"))
+        self.error(ERROR_STRING_ROOT, "Expected type keyword")
     }
     fn parse_top_level_assembly(&mut self) -> Result<TopLevel, String> {
         let ERROR_STRING_ROOT = "velc:Parser:parse_top_level_assembly";
@@ -408,7 +405,7 @@ impl Parser {
                 self.advance();
                 Ok(TopLevel::Assembly(out))
             }
-            _ => Err(format!("{ERROR_STRING_ROOT}:Assembly token missing string value"))
+            _ => self.error(ERROR_STRING_ROOT, "Assembly token missing string value")
         }
     }
     fn parse_function(&mut self, t: TypeName, id: String) -> Result<TopLevel, String> {
@@ -460,7 +457,7 @@ impl Parser {
         };
     
         if !self.matches(&TokenType::Semicolon) {
-            Err(format!("{ERROR_STRING_ROOT}:Expected semicolon"))
+            self.error(ERROR_STRING_ROOT, "Expected semicolon")
         }
         else {
             Ok(TopLevel::GlobalVar(VarDecl {
@@ -480,7 +477,7 @@ impl Parser {
 
         while !self.check(&TokenType::Rbrace) {
             if self.is_at_end() {
-                return Err(format!("{ERROR_STRING_ROOT}:expected }}"));
+                return self.error(ERROR_STRING_ROOT, "expected }");
             }
             stmts.push(self.parse_stmt()?);
         }
@@ -492,7 +489,7 @@ impl Parser {
         let ERROR_STRING_ROOT = "velc:Parser:parse_stmt";
 
         if self.is_at_end() {
-            return Err(format!("{ERROR_STRING_ROOT}:Unexpected EOF"));
+            return self.error(ERROR_STRING_ROOT, "Unexpected EOF");
         }
 
         let stmt = if self.is_type_keyword() {
@@ -509,7 +506,7 @@ impl Parser {
                     self.parse_if_stmt()?
                 }
                 TokenType::Else_Keyword => {
-                    return Err(format!("{ERROR_STRING_ROOT}:Unexpected else keyword"));
+                    return self.error(ERROR_STRING_ROOT, "Unexpected else keyword");
                 }
                 TokenType::While_Keyword => {
                     self.parse_while_stmt()?
@@ -701,58 +698,11 @@ impl Parser {
                 self.advance();
                 Ok(Stmt::Assembly(out))
             }
-            _ => Err(format!("{ERROR_STRING_ROOT}:Assembly token missing string value"))
+            _ => self.error(ERROR_STRING_ROOT, "Assembly token missing string value")
         }
     }
 
 
-/*
-parse_expr
-  -> parse_assignment
-
-parse_assignment
-  -> parse_logical_or
-  -> if assignment operator, recurse parse_assignment on right
-
-parse_logical_or
-  -> parse_logical_xor
-
-parse_logical_xor
-  -> parse_logical_and
-
-parse_logical_and
-  -> parse_bitwise_or
-
-parse_bitwise_or
-  -> parse_bitwise_xor
-
-parse_bitwise_xor
-  -> parse_bitwise_and
-
-parse_bitwise_and
-  -> parse_equality
-
-parse_equality
-  -> parse_relational
-
-parse_relational
-  -> parse_shift
-
-parse_shift
-  -> parse_additive
-
-parse_additive
-  -> parse_multiplicative
-
-parse_multiplicative
-  -> parse_unary
-
-parse_unary
-  -> parse_postfix
-
-parse_postfix
-  -> parse_primary
-  */
 
     fn parse_expr(&mut self) -> Result<Expr, String> {
         self.parse_assignment()
@@ -816,7 +766,7 @@ parse_postfix
     
         if let Some(op) = op {
             if !self.is_valid_assignment_target(&left) {
-                return Err(format!("{ERROR_STRING_ROOT}:Invalid assignment target"));
+                return self.error(ERROR_STRING_ROOT, "Invalid assignment target");
             }
     
             let right = self.parse_assignment()?;
@@ -1228,7 +1178,7 @@ parse_postfix
                         self.advance();
                         Ok(Expr::IntLiteral(out))
                     }
-                    _ => Err(format!("{ERROR_STRING_ROOT}:Int literal missing int value"))
+                    _ => self.error(ERROR_STRING_ROOT, "Int literal missing int value")
                 }
             }
             TokenType::Float_Literal => {
@@ -1238,7 +1188,7 @@ parse_postfix
                         self.advance();
                         Ok(Expr::FloatLiteral(out))
                     }
-                    _ => Err(format!("{ERROR_STRING_ROOT}:Float literal missing float value"))
+                    _ => self.error(ERROR_STRING_ROOT, "Float literal missing float value")
                 }
             }
             TokenType::Char_Literal => {
@@ -1248,7 +1198,7 @@ parse_postfix
                         self.advance();
                         Ok(Expr::CharLiteral(out))
                     }
-                    _ => Err(format!("{ERROR_STRING_ROOT}:Char literal missing char value"))
+                    _ => self.error(ERROR_STRING_ROOT, "Char literal missing char value")
                 }
             }
             TokenType::String_Literal => {
@@ -1258,7 +1208,7 @@ parse_postfix
                         self.advance();
                         Ok(Expr::StringLiteral(out))
                     }
-                    _ => Err(format!("{ERROR_STRING_ROOT}:String literal missing string value"))
+                    _ => self.error(ERROR_STRING_ROOT, "String literal missing string value")
                 }
             }
             TokenType::Identifier => {
@@ -1268,7 +1218,7 @@ parse_postfix
                         self.advance();
                         Ok(Expr::Identifier(out))
                     }
-                    _ => Err(format!("{ERROR_STRING_ROOT}:Identifier token missing string value"))
+                    _ => self.error(ERROR_STRING_ROOT, "Identifier token missing string value")
                 }
             }
             TokenType::Lparen => {
@@ -1277,8 +1227,13 @@ parse_postfix
                 self.expect(&TokenType::Rparen)?;
                 Ok(Expr::Grouping(Box::new(expr)))
             }
-            _ => Err(format!("{ERROR_STRING_ROOT}:Expected expression"))
+            _ => self.error(ERROR_STRING_ROOT, "Expected expression")
         }
     }
 
+
+
+    fn error<T>(&mut self, base: &str, err: &str) -> Result<T, String> {
+        Err(format!("{base}:{err} Current token: Type {:?} pos {}:{}", self.get().Type, self.get().Span.row, self.get().Span.col))
+    }
 }

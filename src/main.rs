@@ -24,6 +24,7 @@ struct Compiler {
     //structures
     lexer: lexer::Lexer,
     parser: parser::Parser,
+    
 
     source_code: String,
     source_preprocessed: String,
@@ -187,6 +188,7 @@ Options:
             self.parser = parser::Parser::from_tokens(&self.tokens);
             self.program = self.parser.run()?;
             println!("{:#?}", self.program);
+
             //semantic analyzer
 
 

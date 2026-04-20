@@ -1,3 +1,4 @@
 void start() {
     for(;;)lovevel();
+    int32 a = 32;
 }
