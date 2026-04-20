@@ -775,6 +775,6 @@ impl Lexer {
     }
 
     fn error<T>(&mut self, base: &str, err: &str) -> Result<T, String> {
-        Err(format!("{base}:{err} pos {}:{}", self.row, self.col))
+        Err(format!("{base}:{err}\nCurrent character:\n\tPosition {}:{}", self.row, self.col))
     }
 }

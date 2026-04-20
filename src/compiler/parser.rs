@@ -1234,6 +1234,6 @@ impl Parser {
 
 
     fn error<T>(&mut self, base: &str, err: &str) -> Result<T, String> {
-        Err(format!("{base}:{err} Current token: Type {:?} pos {}:{}", self.get().Type, self.get().Span.row, self.get().Span.col))
+        Err(format!("{base}:{err} \nCurrent token:\n\tType {:?}\n\tPosition {}:{}", self.get().Type, self.get().Span.row, self.get().Span.col))
     }
 }

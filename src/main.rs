@@ -24,7 +24,8 @@ struct Compiler {
     //structures
     lexer: lexer::Lexer,
     parser: parser::Parser,
-    
+    analyzer: analyzer::Analyzer,
+
 
     source_code: String,
     source_preprocessed: String,
@@ -49,6 +50,7 @@ impl Compiler {
 
             lexer: lexer::Lexer::new(),
             parser: parser::Parser::new(),
+            analyzer: analyzer::Analyzer::new(),
 
             source_code: String::new(),
             source_preprocessed: String::new(),
@@ -192,7 +194,11 @@ Options:
             //semantic analyzer
 
 
+
+
             //code generator
+
+
 
 
 
@@ -204,14 +210,17 @@ Options:
     }
 }
 
-fn main() -> Result<(), String> {
+fn main() {
     let mut compiler: Compiler = Compiler::new();
-    compiler.parse_args()?;
-    compiler.run()?;
 
 
+    if let Err(e) = compiler.parse_args() {
+        println!("Error: {e}");
+    }
+    else if let Err(e) = compiler.run() {
+        println!("{e}");
+    }
 
-    Ok(())
 }
 
 
