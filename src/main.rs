@@ -192,8 +192,9 @@ Options:
             println!("{:#?}", self.program);
 
             //semantic analyzer
-
-
+            self.analyzer = analyzer::Analyzer::new();
+            self.analyzer.run(&self.program)?;
+            
 
 
             //code generator

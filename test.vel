@@ -2,4 +2,9 @@ void start() {
     for(;;)lovevel();
     int32 a = 3.3;
 }
-void meow = 3;
+string meow = 3;
+
+string f1(int32 3) {
+    
+}
+
