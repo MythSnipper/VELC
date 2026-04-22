@@ -1,3 +1,8 @@
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+
+
 use crate::compiler::lexer::*;
 
 #[derive(Default, Debug, Clone)]
@@ -16,12 +21,13 @@ impl Program {
 
 
 
+
 //Top level
 #[derive(Debug, Clone)]
 pub enum TopLevel {
     Function(FunctionDecl),
     GlobalVar(VarDecl),
-    Assembly(String),
+    Assembly(AssemblyDecl),
 }
 #[derive(Debug, Clone)]
 pub struct Param {
@@ -35,6 +41,27 @@ pub struct FunctionDecl {
     pub params: Vec<Param>,
     pub body: Stmt,
 }
+
+#[derive(Debug, Clone)]
+pub struct AsmInput {
+    pub name: String,
+    pub reg: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct AsmOutput {
+    pub reg: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct AssemblyDecl {
+    pub code: String,
+    pub section: String,
+    pub inputs: Vec<AsmInput>,
+    pub outputs: Vec<AsmOutput>,
+}
+
 
 
 //Types
@@ -58,8 +85,18 @@ pub enum BuiltinType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeName {
     Builtin(BuiltinType),
+
     Pointer(Box<TypeName>),
     Array(Box<TypeName>, usize),
+
+
+
+    Function{
+        ret: Box<TypeName>,
+        params: Vec<TypeName>,
+    },
+    IntLiteral,
+    FloatLiteral,
 }
 
 
@@ -162,7 +199,7 @@ pub enum Stmt {
 
     Expr(Expr),
 
-    Assembly(String),
+    Assembly(AssemblyDecl),
     Empty,
 }
 
@@ -419,7 +456,6 @@ impl Parser {
     }
 
     fn parse_program(&mut self) -> Result<Program, String> {
-        let ERROR_STRING_ROOT = "velc:Parser:parse_program";
         let mut program = Program::new();
         while !self.is_at_end() {
             let top_level = self.parse_top_level()?;
@@ -429,41 +465,41 @@ impl Parser {
     }
     fn parse_top_level(&mut self) -> Result<TopLevel, String> {
         let ERROR_STRING_ROOT = "velc:Parser:parse_top_level";
-        //if top level is asm
+    
         if self.check(&TokenType::Assembly) {
             return self.parse_top_level_assembly();
         }
-        //parse two outcomes of top level
-        // either
-        // [typename] [identifier](   -> Function
-        // or
-        // [typename] [identifier] =  -> GlobalVar
+    
         if self.is_type_keyword() {
-            let Type = self.parse_type()?;
-            let id = self.consume_identifier()?;
-
-            if self.check(&TokenType::Lparen) {
-                return self.parse_function(Type, id);
+            let base = self.parse_type()?;
+    
+            // Function definition:
+            // int32 foo(...)
+            if self.check(&TokenType::Identifier) && self.next().Type == TokenType::Lparen {
+                let id = self.consume_identifier()?;
+                return self.parse_function(base, id);
             }
-            else {
-                return self.parse_global_var_decl(Type, id);
-            }
+    
+            // Otherwise treat as variable declarator
+            let (id, Type) = self.parse_decl_name_and_type(base)?;
+            return self.parse_global_var_decl(Type, id);
         }
+    
         self.error(ERROR_STRING_ROOT, "Expected type keyword")
     }
     fn parse_top_level_assembly(&mut self) -> Result<TopLevel, String> {
         let ERROR_STRING_ROOT = "velc:Parser:parse_top_level_assembly";
+    
         match &self.get().Value {
             TokenValue::String(text) => {
-                let out = text.clone();
+                let decl = self.parse_asm_decl(text)?;
                 self.advance();
-                Ok(TopLevel::Assembly(out))
+                Ok(TopLevel::Assembly(decl))
             }
             _ => self.error(ERROR_STRING_ROOT, "Assembly token missing string value")
         }
     }
     fn parse_function(&mut self, t: TypeName, id: String) -> Result<TopLevel, String> {
-        let ERROR_STRING_ROOT = "velc:Parser:parse_function";
         
         self.expect(&TokenType::Lparen)?;
 
@@ -593,7 +629,6 @@ impl Parser {
         Ok(stmt)
     }
     fn parse_return_stmt(&mut self) -> Result<Stmt, String> {
-        let ERROR_STRING_ROOT = "velc:Parser:parse_return_stmt";
 
         self.expect(&TokenType::Return_Keyword)?;
 
@@ -607,12 +642,65 @@ impl Parser {
 
         Ok(Stmt::Return(Some(expr)))
     }
+    
+    fn parse_decl_name_and_type(&mut self, base: TypeName) -> Result<(String, TypeName), String> {
+        let ERROR_STRING_ROOT = "velc:Parser:parse_decl_name_and_type";
+    
+        // Simple case:
+        // int32 x;
+        if self.check(&TokenType::Identifier) {
+            let name = self.consume_identifier()?;
+            return Ok((name, base));
+        }
+    
+        // Function pointer case:
+        // int32 (*ptr)(int32, int32);
+        if self.matches(&TokenType::Lparen) {
+            self.expect(&TokenType::Asterisk)?;
+            let name = self.consume_identifier()?;
+            self.expect(&TokenType::Rparen)?;
+    
+            self.expect(&TokenType::Lparen)?;
+    
+            let mut params = Vec::new();
+    
+            if !self.check(&TokenType::Rparen) {
+                loop {
+                    let param_type = self.parse_type()?;
+                    params.push(param_type);
+    
+                    // Optional parameter name, ignored for function pointer types
+                    if self.check(&TokenType::Identifier) {
+                        self.consume_identifier()?;
+                    }
+    
+                    if self.matches(&TokenType::Comma) {
+                        continue;
+                    }
+                    else {
+                        break;
+                    }
+                }
+            }
+    
+            self.expect(&TokenType::Rparen)?;
+    
+            return Ok((
+                name,
+                TypeName::Pointer(Box::new(TypeName::Function {
+                    ret: Box::new(base),
+                    params,
+                })),
+            ));
+        }
+    
+        self.error(ERROR_STRING_ROOT, "Expected identifier or function pointer declarator")
+    }
     fn parse_var_decl_stmt(&mut self) -> Result<Stmt, String> {
-        let ERROR_STRING_ROOT = "velc:Parser:parse_var_decl_stmt";
         
-        let t = self.parse_type()?;
-        let id = self.consume_identifier()?;
-
+        let base = self.parse_type()?;
+        let (id, t) = self.parse_decl_name_and_type(base)?;
+    
         let init = if self.matches(&TokenType::Assign) {
             Some(self.parse_expr()?)
         }
@@ -621,16 +709,14 @@ impl Parser {
         };
     
         self.expect(&TokenType::Semicolon)?;
-
+    
         Ok(Stmt::VarDecl(VarDecl {
             Type: t,
             name: id,
-            init: init,
+            init,
         }))
-
     }
     fn parse_expr_stmt(&mut self) -> Result<Stmt, String> {
-        let ERROR_STRING_ROOT = "velc:Parser:parse_expr_stmt";
         let expr = self.parse_expr()?;
 
         self.expect(&TokenType::Semicolon)?;
@@ -639,7 +725,6 @@ impl Parser {
     }
 
     fn parse_if_stmt(&mut self) -> Result<Stmt, String> {
-        let ERROR_STRING_ROOT = "velc:Parser:parse_if_stmt";
 
         self.expect(&TokenType::If_Keyword)?;
 
@@ -665,7 +750,6 @@ impl Parser {
         })
     }
     fn parse_while_stmt(&mut self) -> Result<Stmt, String> {
-        let ERROR_STRING_ROOT = "velc:Parser:parse_while_stmt";
 
         self.expect(&TokenType::While_Keyword)?;
 
@@ -684,7 +768,6 @@ impl Parser {
 
     }
     fn parse_for_stmt(&mut self) -> Result<Stmt, String> {
-        let ERROR_STRING_ROOT = "velc:Parser:parse_for_stmt";
 
         self.expect(&TokenType::For_Keyword)?;
 
@@ -744,19 +827,163 @@ impl Parser {
         })
 
     }
+    
+    fn parse_asm_section(&self, asm: &str) -> Result<(String, String), String> {
+        let asm = asm.to_string();
+        let trimmed = asm.trim_start();
+
+        // default: goes to text section
+        if !trimmed.starts_with('$') {
+            return Ok((asm, "text".to_string()));
+        }
+
+        // remove '$'
+        let rest = &trimmed[1..];
+
+        // find first delimiter: space OR newline
+        let space_idx = rest.find(' ');
+        let newline_idx = rest.find('\n');
+
+        let end_idx = match (space_idx, newline_idx) {
+            (Some(s), Some(n)) => std::cmp::min(s, n),
+            (Some(s), None) => s,
+            (None, Some(n)) => n,
+            (None, None) => rest.len(), // only section name present
+        };
+
+        let section = rest[..end_idx].to_string();
+
+        // skip delimiter if present
+        let remaining = if end_idx < rest.len() {
+            rest[end_idx..].trim_start()
+        } else {
+            ""
+        };
+
+        Ok((remaining.to_string(), section))
+    }
+    fn parse_asm_decl(&self, text: &str) -> Result<AssemblyDecl, String> {
+    
+        let (raw_code, meta) = match text.find("}$") {
+            Some(idx) => {
+                let code = text[..idx].to_string();
+                let meta = text[idx + 2..].trim().to_string();
+                (code, meta)
+            }
+            None => {
+                let (code, section) = self.parse_asm_section(text)?;
+                return Ok(AssemblyDecl {
+                    code,
+                    section,
+                    inputs: Vec::new(),
+                    outputs: Vec::new(),
+                });
+            }
+        };
+    
+        let (code, section) = self.parse_asm_section(&raw_code)?;
+    
+        let inputs = self.parse_asm_inputs(&meta)?;
+        let outputs = self.parse_asm_outputs(&meta)?;
+    
+        Ok(AssemblyDecl {
+            code,
+            section,
+            inputs,
+            outputs,
+        })
+    }
+    fn parse_asm_inputs(&self, meta: &str) -> Result<Vec<AsmInput>, String> {
+        let ERROR_STRING_ROOT = "velc:Parser:parse_asm_inputs";
+    
+        let Some(start_idx) = meta.find("in(") else {
+            return Ok(Vec::new());
+        };
+    
+        let rest = &meta[start_idx + 3..];
+        let Some(end_idx) = rest.find(')') else {
+            return self.error(ERROR_STRING_ROOT, "Unterminated in(...) list");
+        };
+    
+        let inner = rest[..end_idx].trim();
+    
+        if inner.is_empty() {
+            return Ok(Vec::new());
+        }
+    
+        let mut inputs = Vec::new();
+    
+        for part in inner.split(',') {
+            let piece = part.trim();
+    
+            let Some(arrow_idx) = piece.find("->") else {
+                return self.error(ERROR_STRING_ROOT, &format!("Expected '->' in input binding '{}'", piece));
+            };
+    
+            let name = piece[..arrow_idx].trim().to_string();
+            let reg = piece[arrow_idx + 2..].trim().to_string();
+    
+            if name.is_empty() || reg.is_empty() {
+                return self.error(ERROR_STRING_ROOT, &format!("Invalid input binding '{}'", piece));
+            }
+    
+            inputs.push(AsmInput { name, reg });
+        }
+    
+        Ok(inputs)
+    }
+    fn parse_asm_outputs(&self, meta: &str) -> Result<Vec<AsmOutput>, String> {
+        let ERROR_STRING_ROOT = "velc:Parser:parse_asm_outputs";
+    
+        let Some(start_idx) = meta.find("out(") else {
+            return Ok(Vec::new());
+        };
+    
+        let rest = &meta[start_idx + 4..];
+        let Some(end_idx) = rest.find(')') else {
+            return self.error(ERROR_STRING_ROOT, "Unterminated out(...) list");
+        };
+    
+        let inner = rest[..end_idx].trim();
+    
+        if inner.is_empty() {
+            return Ok(Vec::new());
+        }
+    
+        let mut outputs = Vec::new();
+    
+        for part in inner.split(',') {
+            let piece = part.trim();
+    
+            let Some(arrow_idx) = piece.find("->") else {
+                return self.error(ERROR_STRING_ROOT, &format!(" Expected '->' in output binding '{}'", piece));
+            };
+    
+            let reg = piece[..arrow_idx].trim().to_string();
+            let name = piece[arrow_idx + 2..].trim().to_string();
+    
+            if reg.is_empty() || name.is_empty() {
+                return self.error(ERROR_STRING_ROOT, &format!("Invalid output binding '{}'", piece));
+            }
+    
+            outputs.push(AsmOutput { reg, name });
+        }
+    
+        Ok(outputs)
+    }
+    
     fn parse_asm_stmt(&mut self) -> Result<Stmt, String> {
         let ERROR_STRING_ROOT = "velc:Parser:parse_asm_stmt";
+    
         match &self.get().Value {
             TokenValue::String(text) => {
-                let out = text.clone();
+                let decl = self.parse_asm_decl(text)?;
                 self.advance();
-                Ok(Stmt::Assembly(out))
+                Ok(Stmt::Assembly(decl))
             }
             _ => self.error(ERROR_STRING_ROOT, "Assembly token missing string value")
         }
     }
-
-
 
     fn parse_expr(&mut self) -> Result<Expr, String> {
         self.parse_assignment()
@@ -773,8 +1000,6 @@ impl Parser {
     }
 
     fn parse_assignment(&mut self) -> Result<Expr, String> {
-
-        let ERROR_STRING_ROOT = "velc:Parser:parse_assignment";
     
         let left = self.parse_logical_or()?;
     
@@ -1163,7 +1388,6 @@ impl Parser {
     }
     
     fn parse_postfix(&mut self) -> Result<Expr, String> {
-        let ERROR_STRING_ROOT = "velc:Parser:parse_postfix";
     
         let mut expr = self.parse_primary()?;
     
@@ -1299,9 +1523,8 @@ impl Parser {
         }
     }
 
-
-
-    fn error<T>(&mut self, base: &str, err: &str) -> Result<T, String> {
+    fn error<T>(&self, base: &str, err: &str) -> Result<T, String> {
         Err(format!("{base}:{err} \nCurrent token:\n\tType {:?}\n\tPosition {}:{}", self.get().Type, self.get().Span.row, self.get().Span.col))
     }
+
 }

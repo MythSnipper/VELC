@@ -1,3 +1,7 @@
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+
 use crate::compiler::parser::*;
 
 use std::collections::HashMap;
@@ -29,6 +33,7 @@ pub struct Analyzer {
     globals: HashMap<String, GlobalSymbol>,
     scopes: Vec<HashMap<String, LocalSymbol>>,
     current_function_ret: Option<TypeName>,
+    current_global_init: Option<String>,
     loop_depth: usize,
 }
 impl Analyzer {
@@ -37,6 +42,7 @@ impl Analyzer {
             globals: HashMap::new(),
             scopes: Vec::new(),
             current_function_ret: None,
+            current_global_init: None,
             loop_depth: 0,
         }
     }
@@ -94,7 +100,13 @@ impl Analyzer {
         if let Some(local) = self.lookup_local(name) {
             return Some(local.Type.clone());
         }
-
+    
+        if let Some(current) = &self.current_global_init {
+            if current == name {
+                return None;
+            }
+        }
+    
         match self.lookup_global(name) {
             Some(GlobalSymbol::GlobalVar(Type)) => Some(Type.clone()),
             _ => None,
@@ -143,13 +155,144 @@ impl Analyzer {
     fn is_pointer_type(&self, Type: &TypeName) -> bool {
         matches!(Type, TypeName::Pointer(_))
     }
+    fn is_int_literal_type(&self, Type: &TypeName) -> bool {
+        matches!(Type, TypeName::IntLiteral)
+    }
+    fn is_float_literal_type(&self, Type: &TypeName) -> bool {
+        matches!(Type, TypeName::FloatLiteral)
+    }
+    fn is_integer_like_type(&self, Type: &TypeName) -> bool {
+        self.is_integer_type(Type) || self.is_int_literal_type(Type)
+    }
+    fn is_float_like_type(&self, Type: &TypeName) -> bool {
+        self.is_float_type(Type) || self.is_float_literal_type(Type)
+    }
+    fn is_numeric_like_type(&self, Type: &TypeName) -> bool {
+        self.is_integer_like_type(Type) || self.is_float_like_type(Type)
+    }
     fn get_pointee_type(&self, Type: &TypeName) -> Option<TypeName> {
         match Type {
             TypeName::Pointer(inner) => Some((**inner).clone()),
             _ => None,
         }
     }
+    fn resolve_arithmetic_type(&self, left: &TypeName, right: &TypeName) -> Result<TypeName, String> {
+        let ERROR_STRING_ROOT = "velc:Analyzer:resolve_arithmetic_type";
     
+        // int literal + int literal => int literal
+        if self.is_int_literal_type(left) && self.is_int_literal_type(right) {
+            return Ok(TypeName::IntLiteral);
+        }
+    
+        // float literal + float literal => float literal
+        if self.is_float_literal_type(left) && self.is_float_literal_type(right) {
+            return Ok(TypeName::FloatLiteral);
+        }
+    
+        // concrete integer + int literal => concrete integer
+        if self.is_integer_type(left) && self.is_int_literal_type(right) {
+            return Ok(left.clone());
+        }
+    
+        if self.is_int_literal_type(left) && self.is_integer_type(right) {
+            return Ok(right.clone());
+        }
+    
+        // concrete float + float literal => concrete float
+        if self.is_float_type(left) && self.is_float_literal_type(right) {
+            return Ok(left.clone());
+        }
+    
+        if self.is_float_literal_type(left) && self.is_float_type(right) {
+            return Ok(right.clone());
+        }
+    
+        // integer + integer => choose wider concrete integer
+        if self.is_integer_type(left) && self.is_integer_type(right) {
+            return self.common_integer_type(left, right);
+        }
+    
+        // float + float => choose wider concrete float
+        if self.is_float_type(left) && self.is_float_type(right) {
+            return self.common_float_type(left, right);
+        }
+    
+        // int literal with concrete float => require explicit cast
+        if (self.is_int_literal_type(left) && self.is_float_type(right))
+            || (self.is_float_type(left) && self.is_int_literal_type(right))
+            || (self.is_integer_type(left) && self.is_float_type(right))
+            || (self.is_float_type(left) && self.is_integer_type(right))
+            || (self.is_int_literal_type(left) && self.is_float_literal_type(right))
+            || (self.is_float_literal_type(left) && self.is_int_literal_type(right))
+            || (self.is_integer_type(left) && self.is_float_literal_type(right))
+            || (self.is_float_literal_type(left) && self.is_integer_type(right))
+        {
+            return self.error(
+                ERROR_STRING_ROOT,
+                &format!(
+                    "Mixed integer/float arithmetic requires explicit cast, got {:?} and {:?}",
+                    left,
+                    right
+                ),
+            );
+        }
+    
+        self.error(
+            ERROR_STRING_ROOT,
+            &format!(
+                "Could not resolve arithmetic type for {:?} and {:?}",
+                left,
+                right
+            ),
+        )
+    }
+    fn common_integer_type(&self, left: &TypeName, right: &TypeName) -> Result<TypeName, String> {
+        let ERROR_STRING_ROOT = "velc:Analyzer:common_integer_type";
+    
+        let lw = match self.integer_width(left) {
+            Some(w) => w,
+            None => return self.error(ERROR_STRING_ROOT, &format!("Left type {:?} is not integer", left)),
+        };
+    
+        let rw = match self.integer_width(right) {
+            Some(w) => w,
+            None => return self.error(ERROR_STRING_ROOT, &format!("Right type {:?} is not integer", right)),
+        };
+    
+        if lw > rw {
+            Ok(left.clone())
+        }
+        else if rw > lw {
+            Ok(right.clone())
+        }
+        else {
+            // same width: preserve left for now
+            Ok(left.clone())
+        }
+    }
+    fn common_float_type(&self, left: &TypeName, right: &TypeName) -> Result<TypeName, String> {
+        let ERROR_STRING_ROOT = "velc:Analyzer:common_float_type";
+    
+        let lw = match self.float_width(left) {
+            Some(w) => w,
+            None => return self.error(ERROR_STRING_ROOT, &format!("Left type {:?} is not float", left)),
+        };
+    
+        let rw = match self.float_width(right) {
+            Some(w) => w,
+            None => return self.error(ERROR_STRING_ROOT, &format!("Right type {:?} is not float", right)),
+        };
+    
+        if lw >= rw {
+            Ok(left.clone())
+        }
+        else {
+            Ok(right.clone())
+        }
+    }
+
+
+
     fn is_assignable_expr(&self, expr: &Expr) -> bool {
         match expr {
             Expr::Identifier(_) => true,
@@ -168,48 +311,156 @@ impl Analyzer {
             _ => false,
         }
     }
+    fn is_condition_type(&self, Type: &TypeName) -> bool {
+        self.is_bool_type(Type)
+            || self.is_integer_type(Type)
+            || self.is_float_type(Type)
+            || self.is_pointer_type(Type)
+    }
+    fn is_static_global_initializer(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::BoolLiteral(_) => true,
+            Expr::IntLiteral(_) => true,
+            Expr::FloatLiteral(_) => true,
+            Expr::CharLiteral(_) => true,
+            Expr::StringLiteral(_) => true,
+    
+            Expr::Cast { expr, .. } => self.is_static_global_initializer(expr),
+    
+            _ => false,
+        }
+    }
+    fn is_valid_asm_register(&self, reg: &str) -> bool {
+        matches!(
+            reg,
+            "rax" | "rbx" | "rcx" | "rdx" |
+            "rsi" | "rdi" |
+            "rbp" | "rsp" |
+            "r8"  | "r9"  | "r10" | "r11" |
+            "r12" | "r13" | "r14" | "r15"
+        )
+    }
+
+    fn integer_width(&self, Type: &TypeName) -> Option<u8> {
+        match Type {
+            TypeName::Builtin(BuiltinType::Int8) => Some(8),
+            TypeName::Builtin(BuiltinType::Uint8) => Some(8),
+            TypeName::Builtin(BuiltinType::Int16) => Some(16),
+            TypeName::Builtin(BuiltinType::Uint16) => Some(16),
+            TypeName::Builtin(BuiltinType::Int32) => Some(32),
+            TypeName::Builtin(BuiltinType::Uint32) => Some(32),
+            TypeName::Builtin(BuiltinType::Int64) => Some(64),
+            TypeName::Builtin(BuiltinType::Uint64) => Some(64),
+            TypeName::Builtin(BuiltinType::Char) => Some(8),
+            TypeName::Pointer(_) => Some(64),
+            _ => None,
+        }
+    }
+    fn float_width(&self, Type: &TypeName) -> Option<u8> {
+        match Type {
+            TypeName::Builtin(BuiltinType::Float32) => Some(32),
+            TypeName::Builtin(BuiltinType::Float64) => Some(64),
+            _ => None,
+        }
+    }
     
     fn can_assign(&self, target: &TypeName, value: &TypeName) -> bool {
-        if self.is_void_type(target) || self.is_void_type(value) {
-            return false;
-        }
-
         if target == value {
             return true;
         }
-
-        if self.is_numeric_type(target) && self.is_numeric_type(value) {
-            return true;
+    
+        if self.is_void_type(target) || self.is_void_type(value) {
+            return false;
         }
-
-        if self.is_pointer_type(target) && self.is_pointer_type(value) {
-            return target == value;
+    
+        // function -> pointer-to-function
+        if let TypeName::Pointer(inner) = target {
+            if **inner == *value {
+                if matches!(**inner, TypeName::Function { .. }) {
+                    return true;
+                }
+            }
         }
-
+    
+        match value {
+            TypeName::IntLiteral => {
+                return self.is_integer_type(target);
+            }
+    
+            TypeName::FloatLiteral => {
+                return self.is_float_type(target);
+            }
+    
+            _ => {}
+        }
+    
+        if let (Some(target_w), Some(value_w)) = (self.integer_width(target), self.integer_width(value)) {
+            return value_w <= target_w;
+        }
+    
+        if let (Some(target_w), Some(value_w)) = (self.float_width(target), self.float_width(value)) {
+            return value_w <= target_w;
+        }
+    
         false
     }
     fn can_cast(&self, target: &TypeName, source: &TypeName) -> bool {
         if target == source {
             return true;
         }
-        
+    
         if self.is_void_type(target) || self.is_void_type(source) {
             return false;
         }
     
-        if self.is_numeric_type(target) && self.is_numeric_type(source) {
+        // literal -> integer
+        if self.is_integer_type(target) && self.is_int_literal_type(source) {
             return true;
         }
     
+        if self.is_integer_type(target) && self.is_float_literal_type(source) {
+            return true;
+        }
+    
+        // literal -> float
+        if self.is_float_type(target) && self.is_int_literal_type(source) {
+            return true;
+        }
+    
+        if self.is_float_type(target) && self.is_float_literal_type(source) {
+            return true;
+        }
+    
+        // concrete integer <-> concrete integer
+        if self.integer_width(target).is_some() && self.integer_width(source).is_some() {
+            return true;
+        }
+    
+        // concrete float <-> concrete float
+        if self.float_width(target).is_some() && self.float_width(source).is_some() {
+            return true;
+        }
+    
+        // concrete integer <-> concrete float
+        if self.integer_width(target).is_some() && self.float_width(source).is_some() {
+            return true;
+        }
+    
+        if self.float_width(target).is_some() && self.integer_width(source).is_some() {
+            return true;
+        }
+    
+        // pointer <-> pointer
         if self.is_pointer_type(target) && self.is_pointer_type(source) {
             return true;
         }
     
-        if self.is_pointer_type(target) && self.is_integer_type(source) {
+        // pointer <-> integer
+        if self.is_pointer_type(target) && self.integer_width(source).is_some() {
             return true;
         }
     
-        if self.is_integer_type(target) && self.is_pointer_type(source) {
+        if self.integer_width(target).is_some() && self.is_pointer_type(source) {
             return true;
         }
     
@@ -238,12 +489,7 @@ impl Analyzer {
         self.current_function_ret.as_ref()
     }
 
-
-
-
-
     fn register_top_level(&mut self, item: &TopLevel) -> Result<(), String> {
-        let ERROR_STRING_ROOT = "velc:Analyzer:register_top_level";
         match item {
             TopLevel::Function(func) => {
                 self.register_function(func)?;
@@ -251,41 +497,37 @@ impl Analyzer {
             TopLevel::GlobalVar(var) => {
                 self.register_global_var(var)?;
             }
-            TopLevel::Assembly(_) => {}
+            TopLevel::Assembly(..) => {}
         }
         Ok(())
     }
     fn register_function(&mut self, func: &FunctionDecl) -> Result<(), String> {
         let ERROR_STRING_ROOT = "velc:Analyzer:register_function";
-
+    
         if self.lookup_global(&func.name).is_some() {
             return self.error(
                 ERROR_STRING_ROOT,
-                &format!("Top level symbol '{}' is already declared", func.name),
+                &format!("Top level symbol '{}' already declared", func.name),
             );
         }
-
-        /*
-        void returns allowed for main
-        
-        if self.is_void_type(&func.ret) && func.name != "main" {
-            
-        }
-        */
-
-        let mut params: Vec<TypeName> = Vec::new();
-
+    
+        let mut params = Vec::new();
+    
         for param in &func.params {
             if self.is_void_type(&param.Type) {
                 return self.error(
                     ERROR_STRING_ROOT,
-                    &format!("Parameter '{}' in function '{}' cannot have void type", param.name, func.name),
+                    &format!(
+                        "Parameter '{}' in function '{}' cannot have type void",
+                        param.name,
+                        func.name
+                    ),
                 );
             }
-
+    
             params.push(param.Type.clone());
         }
-
+    
         self.globals.insert(
             func.name.clone(),
             GlobalSymbol::Function(FunctionSignature {
@@ -293,7 +535,7 @@ impl Analyzer {
                 params,
             }),
         );
-
+    
         Ok(())
     }
     fn register_global_var(&mut self, var: &VarDecl) -> Result<(), String> {
@@ -322,7 +564,6 @@ impl Analyzer {
     }
 
     fn analyze_program(&mut self, program: &Program) -> Result<(), String> {
-        let ERROR_STRING_ROOT = "velc:Analyzer:analyze_program";
         for item in &program.items {
             self.register_top_level(item)?;
         }
@@ -334,53 +575,70 @@ impl Analyzer {
         Ok(())
     }
     fn analyze_top_level(&mut self, item: &TopLevel) -> Result<(), String> {
-        let ERROR_STRING_ROOT = "velc:Analyzer:analyze_top_level";
         match item {
             TopLevel::Function(func) => self.analyze_function(func),
             TopLevel::GlobalVar(var) => self.analyze_global_var(var),
-            TopLevel::Assembly(_) => Ok(())
+            TopLevel::Assembly(..) => Ok(())
         }
     }
     fn analyze_function(&mut self, func: &FunctionDecl) -> Result<(), String> {
         let ERROR_STRING_ROOT = "velc:Analyzer:analyze_function";
-
+    
         self.enter_function(func.ret.clone());
         self.push_scope();
-
+    
         for param in &func.params {
             if self.is_void_type(&param.Type) {
                 self.pop_scope();
                 self.exit_function();
-
+    
                 return self.error(
                     ERROR_STRING_ROOT,
-                    &format!("Parameter '{}' in function '{}' cannot have type void", param.name, func.name),
+                    &format!(
+                        "Parameter '{}' in function '{}' cannot have type void",
+                        param.name,
+                        func.name
+                    ),
                 );
             }
-
-            self.declare_local(&param.name, param.Type.clone())?;
+    
+            if let Err(err) = self.declare_local(&param.name, param.Type.clone()) {
+                self.pop_scope();
+                self.exit_function();
+                return Err(err);
+            }
         }
-
+    
         let result = self.analyze_stmt(&func.body);
-
+    
         self.pop_scope();
         self.exit_function();
-
+    
         result
     }
     fn analyze_global_var(&mut self, var: &VarDecl) -> Result<(), String> {
         let ERROR_STRING_ROOT = "velc:Analyzer:analyze_global_var";
-
+    
         if self.is_void_type(&var.Type) {
             return self.error(
                 ERROR_STRING_ROOT,
                 &format!("Global variable '{}' cannot have type void", var.name),
             );
         }
-
+    
         if let Some(init) = &var.init {
+            if !self.is_static_global_initializer(init) {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    &format!(
+                        "Global variable '{}' initializer must be static and contain no computation",
+                        var.name
+                    ),
+                );
+            }
+    
             let init_type = self.analyze_expr(init)?;
-
+    
             if !self.can_assign(&var.Type, &init_type) {
                 return self.error(
                     ERROR_STRING_ROOT,
@@ -393,9 +651,48 @@ impl Analyzer {
                 );
             }
         }
-
+    
         Ok(())
     }
+
+    fn analyze_assembly_decl(&mut self, decl: &AssemblyDecl) -> Result<(), String> {
+        let ERROR_STRING_ROOT = "velc:Analyzer:analyze_assembly_decl";
+    
+        for input in &decl.inputs {
+            if self.lookup_variable_type(&input.name).is_none() {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("Inline assembly input '{}' is not a declared variable", input.name),
+                );
+            }
+    
+            if !self.is_valid_asm_register(&input.reg) {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("Inline assembly input register '{}' is invalid", input.reg),
+                );
+            }
+        }
+    
+        for output in &decl.outputs {
+            if self.lookup_variable_type(&output.name).is_none() {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("Inline assembly output '{}' is not a declared variable", output.name),
+                );
+            }
+    
+            if !self.is_valid_asm_register(&output.reg) {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("Inline assembly output register '{}' is invalid", output.reg),
+                );
+            }
+        }
+    
+        Ok(())
+    }
+
 
     fn analyze_stmt(&mut self, stmt: &Stmt) -> Result<(), String> {
         let ERROR_STRING_ROOT = "velc:Analyzer:analyze_stmt";
@@ -492,15 +789,180 @@ impl Analyzer {
                     }
                 }
             }
+
+            Stmt::Break => {
+                if !self.is_inside_loop() {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        "Break statement outside of loop",
+                    );
+                }
+    
+                Ok(())
+            }
+    
+            Stmt::Continue => {
+                if !self.is_inside_loop() {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        "Continue statement outside of loop",
+                    );
+                }
+    
+                Ok(())
+            }
+
+            Stmt::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                let cond_type = self.analyze_expr(cond)?;
+    
+                if !self.is_condition_type(&cond_type) {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        &format!(
+                            "If condition must be a bool, numeric, or pointer type, got {:?}",
+                            cond_type
+                        ),
+                    );
+                }
+    
+                self.analyze_stmt(then_branch)?;
+    
+                if let Some(else_branch) = else_branch {
+                    self.analyze_stmt(else_branch)?;
+                }
+    
+                Ok(())
+            }
+
+            Stmt::While { cond, body } => {
+                let cond_type = self.analyze_expr(cond)?;
+    
+                if !self.is_condition_type(&cond_type) {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        &format!(
+                            "While condition must be a bool, numeric, or pointer type, got {:?}",
+                            cond_type
+                        ),
+                    );
+                }
+    
+                self.enter_loop();
+                let result = self.analyze_stmt(body);
+                self.exit_loop();
+    
+                result
+            }
+    
+            Stmt::For {
+                init,
+                cond,
+                step,
+                body,
+            } => {
+                self.push_scope();
+    
+                if let Some(init) = init {
+                    match init {
+                        ForInit::VarDecl(var) => {
+                            if self.is_void_type(&var.Type) {
+                                self.pop_scope();
+                                return self.error(
+                                    ERROR_STRING_ROOT,
+                                    &format!("Variable '{}' cannot have type void", var.name),
+                                );
+                            }
+    
+                            if let Some(init_expr) = &var.init {
+                                let init_type = match self.analyze_expr(init_expr) {
+                                    Ok(t) => t,
+                                    Err(err) => {
+                                        self.pop_scope();
+                                        return Err(err);
+                                    }
+                                };
+    
+                                if !self.can_assign(&var.Type, &init_type) {
+                                    self.pop_scope();
+                                    return self.error(
+                                        ERROR_STRING_ROOT,
+                                        &format!(
+                                            "Cannot initialize variable '{}' of type {:?} with value of type {:?}",
+                                            var.name,
+                                            var.Type,
+                                            init_type
+                                        ),
+                                    );
+                                }
+                            }
+    
+                            if let Err(err) = self.declare_local(&var.name, var.Type.clone()) {
+                                self.pop_scope();
+                                return Err(err);
+                            }
+                        }
+    
+                        ForInit::Expr(expr) => {
+                            if let Err(err) = self.analyze_expr(expr) {
+                                self.pop_scope();
+                                return Err(err);
+                            }
+                        }
+                    }
+                }
+    
+                if let Some(cond) = cond {
+                    let cond_type = match self.analyze_expr(cond) {
+                        Ok(t) => t,
+                        Err(err) => {
+                            self.pop_scope();
+                            return Err(err);
+                        }
+                    };
+    
+                    if !self.is_condition_type(&cond_type) {
+                        self.pop_scope();
+                        return self.error(
+                            ERROR_STRING_ROOT,
+                            &format!(
+                                "For condition must be a bool, numeric, or pointer type, got {:?}",
+                                cond_type
+                            ),
+                        );
+                    }
+                }
+    
+                if let Some(step) = step {
+                    if let Err(err) = self.analyze_expr(step) {
+                        self.pop_scope();
+                        return Err(err);
+                    }
+                }
+    
+                self.enter_loop();
+                let body_result = self.analyze_stmt(body);
+                self.exit_loop();
+    
+                self.pop_scope();
+    
+                body_result
+            }
+            
     
             Stmt::Expr(expr) => {
                 self.analyze_expr(expr)?;
                 Ok(())
             }
     
+            Stmt::Assembly(decl) => {
+                self.analyze_assembly_decl(decl)
+            }
+
             Stmt::Empty => Ok(()),
-    
-            _ => self.error(ERROR_STRING_ROOT, &format!("NOT IMPLEMENTED! {:?}", stmt)),
         }
     }
     fn analyze_expr(&mut self, expr: &Expr) -> Result<TypeName, String> {
@@ -512,11 +974,11 @@ impl Analyzer {
             }
     
             Expr::IntLiteral(_) => {
-                Ok(TypeName::Builtin(BuiltinType::Int64))
+                Ok(TypeName::IntLiteral)
             }
     
             Expr::FloatLiteral(_) => {
-                Ok(TypeName::Builtin(BuiltinType::Float64))
+                Ok(TypeName::FloatLiteral)
             }
     
             Expr::CharLiteral(_) => {
@@ -530,6 +992,12 @@ impl Analyzer {
             Expr::Identifier(name) => {
                 if let Some(Type) = self.lookup_variable_type(name) {
                     Ok(Type)
+                }
+                else if let Some(sig) = self.lookup_function_signature(name) {
+                    Ok(TypeName::Function {
+                        ret: Box::new(sig.ret.clone()),
+                        params: sig.params.clone(),
+                    })
                 }
                 else {
                     self.error(
@@ -548,7 +1016,7 @@ impl Analyzer {
     
                 match op {
                     PrefixOp::Plus | PrefixOp::Neg => {
-                        if !self.is_numeric_type(&inner_type) {
+                        if !self.is_numeric_like_type(&inner_type) {
                             return self.error(
                                 ERROR_STRING_ROOT,
                                 &format!("Unary operator {:?} requires numeric operand, got {:?}", op, inner_type),
@@ -570,7 +1038,7 @@ impl Analyzer {
                     }
     
                     PrefixOp::BitwiseNot => {
-                        if !self.is_integer_type(&inner_type) {
+                        if !self.is_integer_like_type(&inner_type) {
                             return self.error(
                                 ERROR_STRING_ROOT,
                                 &format!("Bitwise not requires integer operand, got {:?}", inner_type),
@@ -611,7 +1079,7 @@ impl Analyzer {
                             );
                         }
     
-                        if !self.is_numeric_type(&inner_type) && !self.is_pointer_type(&inner_type) {
+                        if !self.is_numeric_like_type(&inner_type) && !self.is_pointer_type(&inner_type) {
                             return self.error(
                                 ERROR_STRING_ROOT,
                                 &format!(
@@ -636,7 +1104,7 @@ impl Analyzer {
                     );
                 }
     
-                if !self.is_numeric_type(&inner_type) && !self.is_pointer_type(&inner_type) {
+                if !self.is_numeric_like_type(&inner_type) && !self.is_pointer_type(&inner_type) {
                     return self.error(
                         ERROR_STRING_ROOT,
                         &format!(
@@ -658,7 +1126,7 @@ impl Analyzer {
                     | BinaryOp::Sub
                     | BinaryOp::Mul
                     | BinaryOp::Div => {
-                        if !self.is_numeric_type(&left_type) || !self.is_numeric_type(&right_type) {
+                        if !self.is_numeric_like_type(&left_type) || !self.is_numeric_like_type(&right_type) {
                             return self.error(
                                 ERROR_STRING_ROOT,
                                 &format!(
@@ -670,16 +1138,11 @@ impl Analyzer {
                             );
                         }
     
-                        if self.is_float_type(&left_type) || self.is_float_type(&right_type) {
-                            Ok(TypeName::Builtin(BuiltinType::Float64))
-                        }
-                        else {
-                            Ok(TypeName::Builtin(BuiltinType::Int64))
-                        }
+                        self.resolve_arithmetic_type(&left_type, &right_type)
                     }
-
+    
                     BinaryOp::Mod => {
-                        if !self.is_integer_type(&left_type) || !self.is_integer_type(&right_type) {
+                        if !self.is_integer_like_type(&left_type) || !self.is_integer_like_type(&right_type) {
                             return self.error(
                                 ERROR_STRING_ROOT,
                                 &format!(
@@ -689,8 +1152,20 @@ impl Analyzer {
                                 ),
                             );
                         }
-                    
-                        Ok(left_type)
+    
+                        if self.is_int_literal_type(&left_type) && self.is_int_literal_type(&right_type) {
+                            return Ok(TypeName::IntLiteral);
+                        }
+    
+                        if self.is_integer_type(&left_type) && self.is_int_literal_type(&right_type) {
+                            return Ok(left_type);
+                        }
+    
+                        if self.is_int_literal_type(&left_type) && self.is_integer_type(&right_type) {
+                            return Ok(right_type);
+                        }
+    
+                        self.common_integer_type(&left_type, &right_type)
                     }
     
                     BinaryOp::Eq
@@ -714,7 +1189,7 @@ impl Analyzer {
                     | BinaryOp::Gt
                     | BinaryOp::Lte
                     | BinaryOp::Gte => {
-                        if !self.is_numeric_type(&left_type) || !self.is_numeric_type(&right_type) {
+                        if !self.is_numeric_like_type(&left_type) || !self.is_numeric_like_type(&right_type) {
                             return self.error(
                                 ERROR_STRING_ROOT,
                                 &format!(
@@ -726,6 +1201,8 @@ impl Analyzer {
                             );
                         }
     
+                        self.resolve_arithmetic_type(&left_type, &right_type)?;
+    
                         Ok(TypeName::Builtin(BuiltinType::Bool))
                     }
     
@@ -734,7 +1211,7 @@ impl Analyzer {
                     | BinaryOp::BitwiseXor
                     | BinaryOp::Lshift
                     | BinaryOp::Rshift => {
-                        if !self.is_integer_type(&left_type) || !self.is_integer_type(&right_type) {
+                        if !self.is_integer_like_type(&left_type) || !self.is_integer_like_type(&right_type) {
                             return self.error(
                                 ERROR_STRING_ROOT,
                                 &format!(
@@ -746,7 +1223,18 @@ impl Analyzer {
                             );
                         }
     
-                        Ok(left_type)
+                        if self.is_int_literal_type(&left_type) && self.is_int_literal_type(&right_type) {
+                            Ok(TypeName::IntLiteral)
+                        }
+                        else if self.is_integer_type(&left_type) && self.is_int_literal_type(&right_type) {
+                            Ok(left_type)
+                        }
+                        else if self.is_int_literal_type(&left_type) && self.is_integer_type(&right_type) {
+                            Ok(right_type)
+                        }
+                        else {
+                            self.common_integer_type(&left_type, &right_type)
+                        }
                     }
     
                     BinaryOp::LogicalAnd
@@ -800,7 +1288,7 @@ impl Analyzer {
                     | AssignOp::SubAssign
                     | AssignOp::MulAssign
                     | AssignOp::DivAssign => {
-                        if !self.is_numeric_type(&left_type) || !self.is_numeric_type(&right_type) {
+                        if !self.is_numeric_like_type(&left_type) || !self.is_numeric_like_type(&right_type) {
                             return self.error(
                                 ERROR_STRING_ROOT,
                                 &format!(
@@ -812,11 +1300,25 @@ impl Analyzer {
                             );
                         }
     
+                        let result_type = self.resolve_arithmetic_type(&left_type, &right_type)?;
+    
+                        if !self.can_assign(&left_type, &result_type) {
+                            return self.error(
+                                ERROR_STRING_ROOT,
+                                &format!(
+                                    "Result of compound assignment {:?} has type {:?}, which cannot be assigned to {:?}",
+                                    op,
+                                    result_type,
+                                    left_type
+                                ),
+                            );
+                        }
+    
                         Ok(left_type)
                     }
-
+    
                     AssignOp::ModAssign => {
-                        if !self.is_integer_type(&left_type) || !self.is_integer_type(&right_type) {
+                        if !self.is_integer_like_type(&left_type) || !self.is_integer_like_type(&right_type) {
                             return self.error(
                                 ERROR_STRING_ROOT,
                                 &format!(
@@ -826,7 +1328,25 @@ impl Analyzer {
                                 ),
                             );
                         }
-                    
+    
+                        let result_type = if self.is_int_literal_type(&right_type) {
+                            left_type.clone()
+                        }
+                        else {
+                            self.common_integer_type(&left_type, &right_type)?
+                        };
+    
+                        if !self.can_assign(&left_type, &result_type) {
+                            return self.error(
+                                ERROR_STRING_ROOT,
+                                &format!(
+                                    "Result of compound modulo assignment has type {:?}, which cannot be assigned to {:?}",
+                                    result_type,
+                                    left_type
+                                ),
+                            );
+                        }
+    
                         Ok(left_type)
                     }
     
@@ -836,7 +1356,7 @@ impl Analyzer {
                     | AssignOp::LshiftAssign
                     | AssignOp::RshiftAssign
                     | AssignOp::NotAssign => {
-                        if !self.is_integer_type(&left_type) || !self.is_integer_type(&right_type) {
+                        if !self.is_integer_like_type(&left_type) || !self.is_integer_like_type(&right_type) {
                             return self.error(
                                 ERROR_STRING_ROOT,
                                 &format!(
@@ -854,63 +1374,65 @@ impl Analyzer {
             }
     
             Expr::Call { callee, args } => {
-                match &**callee {
-                    Expr::Identifier(name) => {
-                        let sig = match self.lookup_function_signature(name) {
-                            Some(sig) => sig.clone(),
-                            None => {
+                let callee_type = self.analyze_expr(callee)?;
+            
+                let (ret_type, param_types) = match callee_type {
+                    TypeName::Function { ret, params } => ((*ret).clone(), params),
+            
+                    TypeName::Pointer(inner) => {
+                        match *inner {
+                            TypeName::Function { ret, params } => ((*ret).clone(), params),
+                            other => {
                                 return self.error(
                                     ERROR_STRING_ROOT,
-                                    &format!("Attempt to call undefined function '{}'", name),
-                                );
-                            }
-                        };
-    
-                        if args.len() != sig.params.len() {
-                            return self.error(
-                                ERROR_STRING_ROOT,
-                                &format!(
-                                    "Function '{}' expects {} arguments, got {}",
-                                    name,
-                                    sig.params.len(),
-                                    args.len()
-                                ),
-                            );
-                        }
-    
-                        for (arg, param_type) in args.iter().zip(sig.params.iter()) {
-                            let arg_type = self.analyze_expr(arg)?;
-    
-                            if !self.can_assign(param_type, &arg_type) {
-                                return self.error(
-                                    ERROR_STRING_ROOT,
-                                    &format!(
-                                        "Function '{}' argument type mismatch: expected {:?}, got {:?}",
-                                        name,
-                                        param_type,
-                                        arg_type
-                                    ),
+                                    &format!("Attempt to call non-function pointer type {:?}", other),
                                 );
                             }
                         }
-    
-                        Ok(sig.ret)
                     }
-    
-                    _ => {
-                        self.error(
+            
+                    other => {
+                        return self.error(
                             ERROR_STRING_ROOT,
-                            "Only direct function calls by identifier are supported right now",
-                        )
+                            &format!("Attempt to call non-function type {:?}", other),
+                        );
+                    }
+                };
+            
+                if args.len() != param_types.len() {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        &format!(
+                            "Function expects {} arguments, got {}",
+                            param_types.len(),
+                            args.len()
+                        ),
+                    );
+                }
+            
+                for (arg, param_type) in args.iter().zip(param_types.iter()) {
+                    let arg_type = self.analyze_expr(arg)?;
+            
+                    if !self.can_assign(param_type, &arg_type) {
+                        return self.error(
+                            ERROR_STRING_ROOT,
+                            &format!(
+                                "Function argument type mismatch: expected {:?}, got {:?}",
+                                param_type,
+                                arg_type
+                            ),
+                        );
                     }
                 }
+            
+                Ok(ret_type)
             }
     
             Expr::Index { base, index } => {
                 let base_type = self.analyze_expr(base)?;
                 let index_type = self.analyze_expr(index)?;
     
-                if !self.is_integer_type(&index_type) {
+                if !self.is_integer_like_type(&index_type) {
                     return self.error(
                         ERROR_STRING_ROOT,
                         &format!("Index expression must have integer type, got {:?}", index_type),
@@ -935,10 +1457,10 @@ impl Analyzer {
                     "Member access is not supported yet",
                 )
             }
-
+    
             Expr::Cast { Type, expr } => {
                 let source_type = self.analyze_expr(expr)?;
-            
+    
                 if !self.can_cast(Type, &source_type) {
                     return self.error(
                         ERROR_STRING_ROOT,
@@ -949,14 +1471,14 @@ impl Analyzer {
                         ),
                     );
                 }
-            
+    
                 Ok(Type.clone())
             }
         }
     }
 
 
-    fn error<T>(&mut self, base: &str, err: &str) -> Result<T, String> {
+    fn error<T>(&self, base: &str, err: &str) -> Result<T, String> {
         Err(format!("{base}:{err} \n"))
     }
 

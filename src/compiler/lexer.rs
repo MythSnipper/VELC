@@ -1,5 +1,6 @@
-
-
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {    
@@ -106,8 +107,6 @@ impl Default for TokenType {
     }
 }
 
-
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenValue {
     None,
@@ -162,7 +161,7 @@ impl Lexer {
             col: 1
         }
     }
-    pub fn run(&mut self) -> Result<Vec<Token>, String> {
+    pub fn run(&mut self, debug: bool) -> Result<Vec<Token>, String> {
         let ERROR_STRING_ROOT = "velc:Lexer:run";
         
         while !self.is_at_end() {
@@ -323,11 +322,15 @@ impl Lexer {
                 }
             };
             if new_token.Type != TokenType::None {
-                println!("\tnew token: {:?}:{:?}:{}:{}", new_token.Type, new_token.Value, new_token.Span.row, new_token.Span.col);
+                if debug {
+                    println!("\tnew token: {:?}:{:?}:{}:{}", new_token.Type, new_token.Value, new_token.Span.row, new_token.Span.col);
+                }
                 self.tokens.push(new_token);
             } 
         }
-        println!("EOF!");
+        if debug {
+            println!("EOF!");
+        }
         self.tokens.push(Token{Type: TokenType::EOF, Value: TokenValue::None, Span: TokenSpan{row: self.row, col: self.col}});
         
         
@@ -623,7 +626,6 @@ impl Lexer {
     }
 
     fn scan_asm_single(&mut self) -> Result<Token, String> {
-        let ERROR_STRING_ROOT = "velc:Lexer:scan_asm_single";
 
         let mut new_token: Token = Token::default();
         new_token.Span.row = self.row;
@@ -655,35 +657,66 @@ impl Lexer {
     }
     fn scan_asm_multi(&mut self) -> Result<Token, String> {
         let ERROR_STRING_ROOT = "velc:Lexer:scan_asm_multi";
-
-        let mut new_token: Token = Token::default();
-        new_token.Span.row = self.row;
-        new_token.Span.col = self.col;
-
-        let mut text: String = String::new();
-
+    
+        let start = TokenSpan{row: self.row, col: self.col};
+    
+        // consume "%{"
         self.advance();
         self.advance();
+    
+        let mut out = String::new();
+    
         while !self.is_at_end() {
             let ch = self.get();
             let next_ch = self.next();
+    
             if ch == '}' && next_ch == '%' {
+                // traditional ending: }%
                 self.advance();
                 self.advance();
-                new_token.Type = TokenType::Assembly;
-                new_token.Value = TokenValue::String(text);
-                return Ok(new_token);
+    
+                return Ok(Token {
+                    Type: TokenType::Assembly,
+                    Value: TokenValue::String(out),
+                    Span: start,
+                });
             }
-            else{
-                text.push(ch)
+    
+            if ch == '}' && next_ch == '$' {
+                // metadata form: }$ ... %
+                out.push('}');
+                out.push('$');
+                self.advance();
+                self.advance();
+    
+                while !self.is_at_end() {
+                    let ch2 = self.get();
+    
+                    if ch2 == '%' {
+                        self.advance();
+    
+                        return Ok(Token {
+                            Type: TokenType::Assembly,
+                            Value: TokenValue::String(out),
+                            Span: start,
+                        });
+                    }
+    
+                    out.push(ch2);
+                    self.advance();
+                }
+    
+                return self.error(ERROR_STRING_ROOT, "Unterminated multiline assembly metadata");
             }
+    
+            out.push(ch);
             self.advance();
         }
-        self.error(ERROR_STRING_ROOT, "Unterminated multiline assembly")
+    
+        self.error(ERROR_STRING_ROOT, "Unterminated multiline assembly block")
     }
 
     fn scan_comment_single(&mut self) -> Result<Token, String> {
-        let ERROR_STRING_ROOT = "velc:Lexer:scan_comment_single";
 
         self.advance();
         self.advance();
@@ -751,7 +784,6 @@ impl Lexer {
         Ok(new_token)
     }
     fn scan_operator(&mut self, t: TokenType, skips: usize) -> Result<Token, String> {
-        let ERROR_STRING_ROOT = "velc:Lexer:scan_operator";
 
         let mut new_token: Token = Token::default();
         new_token.Span.row = self.row;
@@ -769,7 +801,6 @@ impl Lexer {
     }
 
     fn whitespace(&mut self) -> Result<Token, String> {
-        let ERROR_STRING_ROOT = "velc:Lexer:whitespace";
         self.advance();
         Ok(Token{Type: TokenType::None, Value: TokenValue::None, Span: TokenSpan::default()})
     }

@@ -1,3 +1,8 @@
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+
+
 
 use std::{fs, process::exit, path::Path};
 
@@ -5,6 +10,7 @@ use std::{fs, process::exit, path::Path};
 
 mod compiler;
 use compiler::*;
+
 
 #[derive(Default, Debug, Clone)]
 struct Compiler {
@@ -25,12 +31,13 @@ struct Compiler {
     lexer: lexer::Lexer,
     parser: parser::Parser,
     analyzer: analyzer::Analyzer,
-
+    codegen: codegen::CodeGenerator,
 
     source_code: String,
     source_preprocessed: String,
     tokens: Vec<lexer::Token>,
     program: parser::Program,
+    assembly: String,
 }
 impl Compiler {
     pub fn new() -> Self {
@@ -51,11 +58,13 @@ impl Compiler {
             lexer: lexer::Lexer::new(),
             parser: parser::Parser::new(),
             analyzer: analyzer::Analyzer::new(),
+            codegen: codegen::CodeGenerator::new(),
 
             source_code: String::new(),
             source_preprocessed: String::new(),
             tokens: Vec::new(),
             program: parser::Program::new(),
+            assembly: String::new(),
         }
     }
     pub fn parse_args(&mut self) -> Result<(), String> {
@@ -170,6 +179,9 @@ Options:
         Ok(())
     }
     pub fn run(&mut self) -> Result<(), String> {
+        let lexer_debug = true;
+        let parser_debug = true;
+        let codegen_debug = true;
 
         //read source code from input file
         self.source_code = fs::read_to_string(&self.input_filename)
@@ -184,26 +196,46 @@ Options:
         if self.do_compile {
             //lexer
             self.lexer = lexer::Lexer::from_source(&self.source_preprocessed);
-            self.tokens = self.lexer.run()?;
+            self.tokens = self.lexer.run(lexer_debug)?; //lexer debug
 
             //parser
             self.parser = parser::Parser::from_tokens(&self.tokens);
             self.program = self.parser.run()?;
-            println!("{:#?}", self.program);
+            if parser_debug {
+                println!("{:#?}", self.program);
+            }
 
             //semantic analyzer
-            self.analyzer = analyzer::Analyzer::new();
             self.analyzer.run(&self.program)?;
             
-
-
             //code generator
-
-
-
-
+            self.assembly = self.codegen.run(&self.program, codegen_debug)?;
 
         }
+        fs::write(&format!("{}.asm", self.temp_filename_root), &self.assembly)
+        .map_err(|e| format!("velc:IO:write: {}", e))?;
+
+        if self.do_assemble {
+            std::process::Command::new("nasm")
+            .args([&format!("{}.asm", self.temp_filename_root), "-f", "elf64", "-o", &format!("{}.o", self.temp_filename_root)])
+            .status()
+            .map_err(|e| format!("velc:nasm: {}", e))?;
+        }
+
+        if self.do_link {
+            std::process::Command::new("ld")
+            .args([&format!("{}.o", self.temp_filename_root), "-o", &self.output_filename])
+            .status()
+            .map_err(|e| format!("velc:ld: {}", e))?;
+        }
+
+        if self.do_execute {
+            println!("RUNNING EXECUTABLE: ");
+            std::process::Command::new(format!("./{}", &self.output_filename))
+            .status()
+            .map_err(|e| format!("velc:execute: {}", e))?;
+        }
+
 
 
 
