@@ -192,7 +192,7 @@ impl Analyzer {
         if target == source {
             return true;
         }
-    
+        
         if self.is_void_type(target) || self.is_void_type(source) {
             return false;
         }

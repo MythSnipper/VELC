@@ -1,9 +1,141 @@
-void main() {
-    uint8* p;
-    print();
-    p = (uint8*)923905333;
+// FAIL 44: wrong argument type should fail
+int32 add44(int32 a, int32 b) {
+    return a + b;
+}
+int32 fail44() {
+    return add44("a", 2);
 }
 
-void print() {
+// FAIL 45: call undefined function should fail
+int32 fail45() {
+    return missing45(1, 2);
+}
 
+// FAIL 46: call non-function identifier should fail
+int32 foo46;
+int32 fail46() {
+    return foo46();
+}
+
+// FAIL 47: index non-pointer should fail
+int32 fail47() {
+    int32 x;
+    x = 5;
+    return x[0];
+}
+
+// FAIL 48: non-integer index should fail
+int32 fail48() {
+    int32 x;
+    int32* p;
+    p = &x;
+    return p[1.5];
+}
+
+// FAIL 49: cast from string to int should fail
+int32 fail49() {
+    return (int32)"hello";
+}
+
+// FAIL 50: cast from bool to pointer should fail if disallowed
+int32 fail50() {
+    return (int32*)true;
+}
+
+// FAIL 51: float to pointer cast should fail if disallowed
+int32 fail51() {
+    uint8* p;
+    p = (uint8*)3.14;
+    return 0;
+}
+
+// FAIL 52: pointer to float cast should fail if disallowed
+float32 fail52() {
+    int32 x;
+    int32* p;
+    p = &x;
+    return (float32)p;
+}
+
+// FAIL 53: call result assignment target should fail
+int32 id53(int32 x) {
+    return x;
+}
+int32 fail53() {
+    id53(1) = 2;
+    return 0;
+}
+
+// FAIL 54: binary expr assignment target should fail
+int32 fail54() {
+    int32 x;
+    int32 y;
+    (x + y) = 5;
+    return 0;
+}
+
+// FAIL 55: if condition wrong type should fail if bool-only
+int32 fail55() {
+    if (5) {
+        return 1;
+    }
+    return 0;
+}
+
+// FAIL 56: break outside loop should fail
+int32 fail56() {
+    break;
+    return 0;
+}
+
+// FAIL 57: continue outside loop should fail
+int32 fail57() {
+    continue;
+    return 0;
+}
+
+// FAIL 58: for condition wrong type should fail if bool-only
+int32 fail58() {
+    for (; 5; ) {
+        break;
+    }
+    return 0;
+}
+
+// FAIL 59: member access unsupported should fail
+int32 fail59() {
+    int32 x;
+    return x.field;
+}
+
+// FAIL 60: call via non-identifier callee should fail
+int32 foo60() {
+    return 0;
+}
+int32 fail60() {
+    return (foo60)();
+}
+
+// FAIL 61: many errors possible, first-error sanity should fail
+int32 fail61() {
+    void x;
+    y = 3;
+    return "hello";
+}
+
+// FAIL 62: nested bad cast should fail
+int32 fail62() {
+    uint8* p;
+    p = (uint8*)(float64)3.14;
+    return 0;
+}
+
+// FAIL 63: bad deref after bad cast should fail
+int32 fail63() {
+    return *(int32)5;
+}
+
+// FAIL 64: index non-pointer from cast should fail
+int32 fail64() {
+    return ((int32)5)[0];
 }

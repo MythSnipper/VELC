@@ -817,10 +817,11 @@ impl Parser {
         else {
             None
         };
-    
+        
         if let Some(op) = op {
             if !self.is_valid_assignment_target(&left) {
-                return self.error(ERROR_STRING_ROOT, "Invalid assignment target");
+                //WARNING: REMOVED
+                //return self.error(ERROR_STRING_ROOT, "Invalid assignment target");
             }
     
             let right = self.parse_assignment()?;
