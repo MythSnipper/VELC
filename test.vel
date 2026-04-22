@@ -1,10 +1,9 @@
-void start() {
-    for(;;)lovevel();
-    int32 a = 3.3;
-}
-string meow = 3;
-
-string f1(int32 3) {
-    
+void main() {
+    uint8* p;
+    print();
+    p = (uint8*)923905333;
 }
 
+void print() {
+
+}

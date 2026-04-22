@@ -23,15 +23,18 @@ impl CodeGenerator {
     fn emit_program(&mut self, program: &Program) -> Result<String, String> {
         let mut ret = String::new();
         for item in &program.items {
-            ret += emit_top_level(item)?;
+            ret += &self.emit_top_level(item)?;
         }
         Ok(ret)
     }
     fn emit_top_level(&mut self, item: &TopLevel) -> Result<String, String> {
-        let mut ret = String::new();
-        match item {
+        Ok(
             
-        }
+            match item {
+                _ => "meow".to_string()
+            }
+
+        )
     }
 
 

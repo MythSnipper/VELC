@@ -218,8 +218,12 @@ pub enum Expr {
         base: Box<Expr>,
         field: String,
     },
-}
 
+    Cast {
+        Type: TypeName,
+        expr: Box<Expr>,
+    },
+}
 
 #[derive(Default, Debug, Clone)]
 pub struct Parser {
@@ -361,6 +365,56 @@ impl Parser {
                 Ok(out)
             }
             _ => self.error(ERROR_STRING_ROOT, "Identifier token missing string value")
+        }
+    }
+    fn is_cast(&self) -> bool {
+        if self.get().Type != TokenType::Lparen {
+            return false;
+        }
+        let mut i = self.index + 1;
+
+        let is_type_keyword = |t: &TokenType| {
+            matches!(
+                t,
+                TokenType::Bool_Keyword
+                    | TokenType::Int8_Keyword
+                    | TokenType::Int16_Keyword
+                    | TokenType::Int32_Keyword
+                    | TokenType::Int64_Keyword
+                    | TokenType::Uint8_Keyword
+                    | TokenType::Uint16_Keyword
+                    | TokenType::Uint32_Keyword
+                    | TokenType::Uint64_Keyword
+                    | TokenType::Char_Keyword
+                    | TokenType::Float32_Keyword
+                    | TokenType::Float64_Keyword
+                    | TokenType::String_Keyword
+                    | TokenType::Void_Keyword
+            )
+        };
+
+        let Some(token) = self.tokens.get(i) else {
+            return false;
+        };
+
+        if !is_type_keyword(&token.Type) {
+            return false;
+        }
+
+        i += 1;
+
+        while let Some(token) = self.tokens.get(i) {
+            if token.Type == TokenType::Asterisk {
+                i += 1;
+            }
+            else {
+                break;
+            }
+        }
+
+        match self.tokens.get(i) {
+            Some(token) if token.Type == TokenType::Rparen => true,
+            _ => false,
         }
     }
 
@@ -1087,6 +1141,19 @@ impl Parser {
             let expr = self.parse_unary()?;
             return Ok(Expr::Prefix {
                 op: PrefixOp::Deref,
+                expr: Box::new(expr),
+            });
+        }
+
+        if self.is_cast() {
+            self.expect(&TokenType::Lparen)?;
+            let Type = self.parse_type()?;
+            self.expect(&TokenType::Rparen)?;
+        
+            let expr = self.parse_unary()?;
+        
+            return Ok(Expr::Cast {
+                Type,
                 expr: Box::new(expr),
             });
         }
