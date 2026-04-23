@@ -1,5 +1,5 @@
 
-%{
+/{
 global _start
 _start:
     mov rax, 1          ; syscall: write
@@ -12,22 +12,16 @@ _start:
     xor rdi, rdi        ; exit code 0
     syscall             ; invoke syscall
     
-}%
+}/
 
-%{$data 
+/{$data 
     msg db "Hello, World!", 0xA
     msglen equ $ - msg
     x db 1
     y db 2
-}%
+}/
 
-
-
-
-%{$data
-    ;test 1
-}$
-in(x -> rbx, y -> rcx)
-out(rdx -> x, r11 -> y)
-%
+int32 _start(int32 hi, int32 meow) {
+    return 5;
+}
 
