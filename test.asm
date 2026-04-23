@@ -4,7 +4,7 @@ global _start
 _start:
     push rbp
     mov rbp, rsp
-    sub rsp, 32
+    sub rsp, 48
     mov [rbp-8], rdi
     mov [rbp-16], rsi
 __start_return:

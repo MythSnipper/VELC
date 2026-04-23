@@ -25,7 +25,7 @@ int32 _start(int32 hi, int32 meow) {
     int32 x;
 
     for(int32 x=0;x<3;x++){
-        
+        int32 x = 30;
     }
     return 5;
 }

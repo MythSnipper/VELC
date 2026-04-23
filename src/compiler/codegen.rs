@@ -364,6 +364,7 @@ impl CodeGenerator {
         let frame = self.build_function_frame(decl)?;
         let stack_size = frame.stack_size;
         println!("Stack size: {stack_size}");
+        println!("Frame: {:?}", frame.locals);
 
         self.current_frame = Some(frame);
     
