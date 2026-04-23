@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 pub struct FunctionFrame {
     pub name: String,
     pub stack_size: usize,
+    pub next_local_offset: isize,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -188,53 +189,52 @@ impl CodeGenerator {
 
     fn build_function_frame(&mut self, decl: &FunctionDecl) -> Result<FunctionFrame, String> {
 
-        self.local_scopes.push(HashMap::new());
-        let locals = self.local_scopes.last().unwrap();
-
+        let mut locals_size = 0;
         //parameters
-        for param in &decl.params {
-            offset += 8;
-            locals.insert(param.name.clone(), -offset);
+        for _ in &decl.params {
+            locals_size += 8;
         }
-        self.collect_stmt_locals(&decl.body, &mut locals, &mut offset)?;
 
-        let stack_size = ((offset as usize + 15) / 16) * 16;
+        self.collect_function_locals(&decl.body, &mut locals_size)?;
+
+        let stack_size = ((locals_size + 15) / 16) * 16; //16 byte alignment
+
+        if self.debug {println!("Function {} has {} locals, {}B stack", decl.name, locals_size / 8, stack_size)}
 
         Ok(FunctionFrame{
-            stack_size,
-            locals,
+            name: decl.name.clone(),
+            stack_size: stack_size,
+            next_local_offset: 0
         })
     }
-    fn collect_stmt_locals(&mut self, stmt: &Stmt, locals: &mut HashMap<String, isize>, offset: &mut isize) -> Result<(), String> {
+    fn collect_function_locals(&mut self, stmt: &Stmt, offset: &mut usize) -> Result<(), String> {
         match stmt {
             Stmt::Block(stmts) => {
                 for stmt in stmts {
-                    self.collect_stmt_locals(stmt, locals, offset)?;
+                    self.collect_function_locals(stmt, offset)?;
                 }
             }
     
             Stmt::VarDecl(decl) => {
                 *offset += 8;
-                locals.insert(decl.name.clone(), -*offset);
             }
     
             Stmt::If { then_branch, else_branch, .. } => {
-                self.collect_stmt_locals(then_branch, locals, offset)?;
+                self.collect_function_locals(then_branch, offset)?;
                 if let Some(else_branch) = else_branch {
-                    self.collect_stmt_locals(else_branch, locals, offset)?;
+                    self.collect_function_locals(else_branch, offset)?;
                 }
             }
     
             Stmt::While { body, .. } => {
-                self.collect_stmt_locals(body, locals, offset)?;
+                self.collect_function_locals(body, offset)?;
             }
     
             Stmt::For { init, body, .. } => {
                 if let Some(ForInit::VarDecl(decl)) = init {
                     *offset += 8;
-                    locals.insert(decl.name.clone(), -*offset);
                 }
-                self.collect_stmt_locals(body, locals, offset)?;
+                self.collect_function_locals(body, offset)?;
             }
     
             _ => {}
@@ -256,7 +256,8 @@ impl CodeGenerator {
     fn format_offset(&self, offset: isize) -> String {
         if offset < 0 {
             format!("-{}", -offset)
-        } else {
+        }
+        else {
             format!("+{}", offset)
         }
     }
@@ -351,7 +352,10 @@ impl CodeGenerator {
     fn emit_function(&mut self, decl: &FunctionDecl) -> Result<(), String> {
         let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_function";
 
-        //calculates size of locals and fills in local scope
+        //Reset all local scopes
+        self.local_scopes.clear();
+
+        //calculates size of function locals
         let func = self.build_function_frame(decl)?;
         self.current_function = Some(func.clone());
 
@@ -364,12 +368,16 @@ impl CodeGenerator {
         //Function start stack frame
         self.push_section("text", "    push rbp\n")?;
         self.push_section("text", "    mov rbp, rsp\n")?;
+
         //reserve space for locals
         if func.stack_size > 0 {
             self.push_section("text", &format!("    sub rsp, {}\n", func.stack_size))?;
         }
 
-        //put register parameters into stack slots
+        //put register parameters into stack slots and add scoping
+        self.local_scopes.push(HashMap::new());
+        let parameter_scope = self.local_scopes.as_mut();
+
         for (i, param) in decl.params.iter().enumerate() {
             let reg = match self.arg_register(i) {
                 Some(reg) => reg,
@@ -389,7 +397,7 @@ impl CodeGenerator {
         }
 
         //function body
-        //self.emit_stmt(&decl.body, &end_label)?;
+        self.emit_stmt(&decl.body, &end_label)?;
 
         //return label
         self.push_section("text", &format!("{}:\n", end_label))?;
@@ -403,6 +411,18 @@ impl CodeGenerator {
 
         Ok(())
     }
+    fn emit_stmt(&mut self, stmt: &Stmt, ret_label: &str) -> Result<(), String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_function";
+
+        self.push_section("text", &format!("    jmp {}", ret_label));
+
+        Ok(())
+    }
+
+
+
+
+
 
 
     fn error<T>(&self, base: &str, err: &str) -> Result<T, String> {
