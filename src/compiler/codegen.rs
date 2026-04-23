@@ -1,10 +1,10 @@
 use crate::compiler::parser::*;
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{BTreeMap, HashMap};
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct FunctionFrame {
+    pub name: String,
     pub stack_size: usize,
-    pub locals: HashMap<String, isize>, // rbp-relative offsets, usually negative
 }
 
 #[derive(Default, Debug, Clone)]
@@ -13,20 +13,23 @@ pub struct CodeGenerator {
     sections: BTreeMap<String, String>,
 
     label_id: usize,
-    current_function: Option<String>,
-    current_frame: Option<FunctionFrame>,
+
+    current_function: Option<FunctionFrame>,
+    local_scopes: Vec<HashMap<String, isize>>,
+
     loop_stack: Vec<(String, String)>, // (continue_label, break_label)
 }
 impl CodeGenerator {
     pub fn new() -> Self {
         Self {
             debug: false,
-
             sections: BTreeMap::new(),
 
             label_id: 0,
+
             current_function: None,
-            current_frame: None,
+            local_scopes: Vec::new(),
+
             loop_stack: Vec::new(),
         }
     }
@@ -70,9 +73,6 @@ impl CodeGenerator {
         self.label_id += 1;
         self.label_id
     }    
-    fn generate_label(&mut self, prefix: &str) -> String {
-        format!("{}_{}", prefix, self.next_label_id())
-    }
 
     fn push_section(&mut self, section: &str, text: &str) -> Result<(), String> {
         let section_name = match section {
@@ -141,9 +141,6 @@ impl CodeGenerator {
         }
     }
 
-    fn generate_string_label(&mut self) -> String {
-        format!("_str_{}", self.next_label_id())
-    }
     fn emit_static_initializer_value(&mut self, expr: &Expr, Type: &TypeName) -> Result<String, String> {
         let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_static_initializer_value";
     
@@ -166,7 +163,7 @@ impl CodeGenerator {
     
             Expr::StringLiteral(s) => {
                 // string global stores pointer to rodata string
-                let label = self.generate_string_label();
+                let label = format!("_str_{}", self.next_label_id());
                 self.push_section("rodata", &format!("{} db {:?}, 0\n", label, s));
                 Ok(label)
             }
@@ -190,8 +187,9 @@ impl CodeGenerator {
     }
 
     fn build_function_frame(&mut self, decl: &FunctionDecl) -> Result<FunctionFrame, String> {
-        let mut locals = HashMap::new();
-        let mut offset: isize = 0;
+
+        self.local_scopes.push(HashMap::new());
+        let locals = self.local_scopes.last().unwrap();
 
         //parameters
         for param in &decl.params {
@@ -244,30 +242,25 @@ impl CodeGenerator {
     
         Ok(())
     }
-    fn lookup_local_offset(&self, name: &str) -> Result<isize, String> {
+    fn lookup_local_offset(&mut self, name: &str) -> Result<isize, String> {
         let ERROR_STRING_ROOT = "velc:CodeGenerator:lookup_local_offset";
-    
-        let frame = match &self.current_frame {
-            Some(frame) => frame,
-            None => return self.error(ERROR_STRING_ROOT, "No active function frame"),
-        };
-    
-        match frame.locals.get(name) {
-            Some(offset) => Ok(*offset),
-            None => self.error(
-                ERROR_STRING_ROOT,
-                &format!("Unknown local '{}'", name),
-            ),
+
+        for scope in self.local_scopes.iter().rev() {
+            if let Some(offset) = scope.get(name) {
+                return Ok(*offset);
+            }
         }
+
+        self.error(ERROR_STRING_ROOT, &format!("Unknown local '{}'", name))
     }
-    fn fmt_offset(offset: isize) -> String {
+    fn format_offset(&self, offset: isize) -> String {
         if offset < 0 {
             format!("-{}", -offset)
         } else {
             format!("+{}", offset)
         }
     }
-    fn arg_reg(index: usize) -> Option<&'static str> {
+    fn arg_register(&self, index: usize) -> Option<&'static str> {
         match index {
             0 => Some("rdi"),
             1 => Some("rsi"),
@@ -278,7 +271,6 @@ impl CodeGenerator {
             _ => None,
         }
     }
-
 
     fn emit_program(&mut self, program: &Program) -> Result<(), String> {
         for item in &program.items {
@@ -358,63 +350,60 @@ impl CodeGenerator {
     }
     fn emit_function(&mut self, decl: &FunctionDecl) -> Result<(), String> {
         let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_function";
-    
-        self.current_function = Some(decl.name.clone());
-    
-        let frame = self.build_function_frame(decl)?;
-        let stack_size = frame.stack_size;
-        println!("Stack size: {stack_size}");
-        println!("Frame: {:?}", frame.locals);
 
-        self.current_frame = Some(frame);
-    
-        self.push_section("text", &format!("global {}\n{}:\n", decl.name, decl.name))?;
-    
+        //calculates size of locals and fills in local scope
+        let func = self.build_function_frame(decl)?;
+        self.current_function = Some(func.clone());
+
+        let end_label = format!("_{}_end", decl.name);
+
+        //Function label
+        self.push_section("text", &format!("global {}\n", decl.name))?;
+        self.push_section("text", &format!("{}:\n", decl.name))?;
+
+        //Function start stack frame
         self.push_section("text", "    push rbp\n")?;
         self.push_section("text", "    mov rbp, rsp\n")?;
-    
-        if stack_size > 0 {
-            self.push_section("text", &format!("    sub rsp, {}\n", stack_size))?;
+        //reserve space for locals
+        if func.stack_size > 0 {
+            self.push_section("text", &format!("    sub rsp, {}\n", func.stack_size))?;
         }
-    
-        // spill params to their stack slots
+
+        //put register parameters into stack slots
         for (i, param) in decl.params.iter().enumerate() {
-            let reg = match Self::arg_reg(i) {
+            let reg = match self.arg_register(i) {
                 Some(reg) => reg,
                 None => {
-                    self.current_frame = None;
-                    self.current_function = None;
                     return self.error(
                         ERROR_STRING_ROOT,
                         "More than 6 parameters not yet supported",
                     );
                 }
             };
-    
+
             let offset = self.lookup_local_offset(&param.name)?;
             self.push_section(
                 "text",
-                &format!("    mov [rbp{}], {}\n", Self::fmt_offset(offset), reg),
+                &format!("    mov qword [rbp{}], {}\n", self.format_offset(offset), reg),
             )?;
         }
-    
-        // body
-        //self.emit_stmt(&decl.body)?;
-    
-        // unified return label
-        let ret_label = format!("_{}_return", decl.name);
-        self.push_section("text", &format!("{}:\n", ret_label))?;
-    
-        // epilogue
+
+        //function body
+        //self.emit_stmt(&decl.body, &end_label)?;
+
+        //return label
+        self.push_section("text", &format!("{}:\n", end_label))?;
+
+        //end stack frame
         self.push_section("text", "    mov rsp, rbp\n")?;
         self.push_section("text", "    pop rbp\n")?;
-        self.push_section("text", "    ret\n\n")?;
-    
-        self.current_frame = None;
+        self.push_section("text", "    ret\n")?;
+
         self.current_function = None;
-    
+
         Ok(())
     }
+
 
     fn error<T>(&self, base: &str, err: &str) -> Result<T, String> {
         Err(format!("{base}:{err}\n"))
