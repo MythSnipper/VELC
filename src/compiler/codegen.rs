@@ -189,17 +189,19 @@ impl CodeGenerator {
 
     fn build_function_frame(&mut self, decl: &FunctionDecl) -> Result<FunctionFrame, String> {
 
-        let mut locals_size = 0;
-        //parameters
-        for _ in &decl.params {
-            locals_size += 8;
+        let mut locals_size = 0; //size locals take up in bytes
+        let mut locals_count = 0; //number of locals
+
+        for s in &decl.params {
+            locals_size += self.type_size(&s.Type)?;
+            locals_count += 1;
         }
 
-        self.collect_function_locals(&decl.body, &mut locals_size)?;
+        self.collect_function_locals(&decl.body, &mut locals_size, &mut locals_count)?;
 
         let stack_size = ((locals_size + 15) / 16) * 16; //16 byte alignment
 
-        if self.debug {println!("Function {} has {} locals, {}B stack", decl.name, locals_size / 8, stack_size)}
+        if self.debug {println!("Function {} has {} locals, {}B stack(real {}B)", decl.name, locals_count, stack_size, locals_size)}
 
         Ok(FunctionFrame{
             name: decl.name.clone(),
@@ -207,36 +209,37 @@ impl CodeGenerator {
             next_local_offset: 0
         })
     }
-    fn collect_function_locals(&mut self, stmt: &Stmt, offset: &mut usize) -> Result<(), String> {
+    fn collect_function_locals(&mut self, stmt: &Stmt, offset: &mut usize, count: &mut u32) -> Result<(), String> {
         match stmt {
             Stmt::Block(stmts) => {
                 for stmt in stmts {
-                    self.collect_function_locals(stmt, offset)?;
+                    self.collect_function_locals(stmt, offset, count)?;
                 }
             }
     
             Stmt::VarDecl(decl) => {
-                *offset += 8;
+                *offset += self.type_size(&decl.Type)?;
+                *count += 1;
             }
     
             Stmt::If { then_branch, else_branch, .. } => {
-                self.collect_function_locals(then_branch, offset)?;
+                self.collect_function_locals(then_branch, offset, count)?;
                 if let Some(else_branch) = else_branch {
-                    self.collect_function_locals(else_branch, offset)?;
+                    self.collect_function_locals(else_branch, offset, count)?;
                 }
             }
     
             Stmt::While { body, .. } => {
-                self.collect_function_locals(body, offset)?;
+                self.collect_function_locals(body, offset, count)?;
             }
     
             Stmt::For { init, body, .. } => {
                 if let Some(ForInit::VarDecl(decl)) = init {
-                    *offset += 8;
+                    *offset += self.type_size(&decl.Type)?;
+                    *count += 1;
                 }
-                self.collect_function_locals(body, offset)?;
+                self.collect_function_locals(body, offset, count)?;
             }
-    
             _ => {}
         }
     
@@ -366,6 +369,7 @@ impl CodeGenerator {
         self.push_section("text", &format!("{}:\n", decl.name))?;
 
         //Function start stack frame
+        self.push_section("text", "    endbr64\n")?;
         self.push_section("text", "    push rbp\n")?;
         self.push_section("text", "    mov rbp, rsp\n")?;
 
@@ -376,7 +380,7 @@ impl CodeGenerator {
 
         //put register parameters into stack slots and add scoping
         self.local_scopes.push(HashMap::new());
-        let parameter_scope = self.local_scopes.as_mut();
+        let parameter_scope: &mut HashMap<String, isize> = self.local_scopes.last_mut().unwrap();
 
         for (i, param) in decl.params.iter().enumerate() {
             let reg = match self.arg_register(i) {

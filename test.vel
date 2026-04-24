@@ -22,15 +22,29 @@ _start:
 }/
 
 
-int32 add(int32 a, int32 b, int32 c, int32 d, int32 e, int32 f, int32 g, int32 h) {
+
+
+
+
+
+
+
+
+int32 add(int8 a, int8 b, int8 c, int8 d, int16 e, int32 f, int32 g, int32 h) {
 
     for(int32 i=0;i<10;i++) {
         int32 i2 = i * 2;
-        int32 i = 30;
+        int8 i = 303;
     }
 
 
 
-    int32 result = a + b;
+    int8 result = (int8)(a + b);
     return result;
 }
+
+
+
+
+
+
