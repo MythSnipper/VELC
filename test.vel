@@ -1,15 +1,16 @@
 
 
-string vel = "hello world!\n";
-uint64 msglen = 13;
+string vel = "I love vel\n";
+uint64 msglen = 12;
 
 void main() {
-    %{
-        push rax
-        mov rax, 1          ; syscall: write
-        mov rdi, 1          ; file descriptor: stdout
-        pop rsi             ; pointer to message
-        mov rdx, rbx        ; message length
-        syscall             ; invoke syscall
-    }$ in(vel -> rax, msglen -> rbx)%
+    for(int32 i=0;i<5;i++){
+        %{
+            mov rax, 1          ; syscall: write
+            mov rdi, 1          ; file descriptor: stdout
+            ; pointer to message in rsi
+            mov rdx, rbx        ; message length
+            syscall             ; invoke syscall
+        }$ in(vel -> rsi, msglen -> rbx)%
+    }
 }

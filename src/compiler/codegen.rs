@@ -263,7 +263,7 @@ impl CodeGenerator {
             Expr::StringLiteral(s) => {
                 let label = format!("_str_{}", self.next_label_id());
                 let bytes = self.format_nasm_string_bytes(s);
-                self.push_section("rodata", &format!("{} db {}\n", label, bytes))?;
+                self.push_section("rodata", &format!("{} db {}", label, bytes))?;
                 Ok(label)
             }
     
@@ -561,7 +561,7 @@ impl CodeGenerator {
     
                 self.push_section(
                     "data",
-                    &format!("{} {} {}\n", decl.name, dir, value),
+                    &format!("{} {} {}", decl.name, dir, value),
                 )?;
     
                 Ok(())
@@ -571,7 +571,7 @@ impl CodeGenerator {
     
                 self.push_section(
                     "bss",
-                    &format!("{} {} 1\n", decl.name, dir),
+                    &format!("{} {} 1", decl.name, dir),
                 )?;
     
                 Ok(())
@@ -588,13 +588,13 @@ impl CodeGenerator {
         self.func = self.build_function_frame(decl)?;
 
         //Function label
-        self.push_section("text", &format!("global {}\n", decl.name))?;
-        self.push_section("text", &format!("{}:\n", decl.name))?;
+        self.push_section("text", &format!("global {}", decl.name))?;
+        self.push_section("text", &format!("{}:", decl.name))?;
 
         //Function start stack frame
-        self.push_section("text", "    endbr64\n")?;
-        self.push_section("text", "    push rbp\n")?;
-        self.push_section("text", "    mov rbp, rsp\n")?;
+        self.push_section("text", "    endbr64")?;
+        self.push_section("text", "    push rbp")?;
+        self.push_section("text", "    mov rbp, rsp")?;
 
         //reserve space for locals
         if self.func.stack_size > 0 {
@@ -618,7 +618,7 @@ impl CodeGenerator {
             let size = self.type_size(&t)?;
             parameter_scope.insert(param.name.clone(), (offset, t));
 
-            self.push_section("text", &format!("    mov {} [rbp{}], {}\n",
+            self.push_section("text", &format!("    mov {} [rbp{}], {}",
                 self.size_specifier(size)?,
                 self.format_offset(offset),
                 self.format_reg_size(&reg, size)?
@@ -632,12 +632,12 @@ impl CodeGenerator {
         self.emit_stmt(&decl.body, &end_label)?;
 
         //return label
-        self.push_section("text", &format!("{}:\n", end_label))?;
+        self.push_section("text", &format!("{}:", end_label))?;
 
         //end stack frame
-        self.push_section("text", "    mov rsp, rbp\n")?;
-        self.push_section("text", "    pop rbp\n")?;
-        self.push_section("text", "    ret\n")?;
+        self.push_section("text", "    mov rsp, rbp")?;
+        self.push_section("text", "    pop rbp")?;
+        self.push_section("text", "    ret")?;
 
         //clear state
         self.func = FunctionFrame::default();
@@ -653,21 +653,16 @@ _start:
     ;argc and argv
     mov rdi, qword [rsp]       ;argc
     lea rsi, [rsp+8]           ;argv
-
     ;envp
     mov rax, rdi
     lea rdx, [rsi + rax*8 + 8] ;rdx = envp
-
     ;align stack to 16 bytes
     and rsp, -16
-
     call main
-
     ;exit
     mov rdi, rax
     mov rax, 60
     syscall
-
 ")
     }
     fn emit_assembly(&mut self, decl: &AssemblyDecl) -> Result<String, String> {
@@ -679,7 +674,7 @@ _start:
             if let Ok(te) = self.lookup_local_var(&i.name) {
                 let (offset, t) = te;
                 let typesize = self.type_size(&t)?;
-                inputs_text.push_str(&format!("mov {}, {} [rbp{}]\n",
+                inputs_text.push_str(&format!("    mov {}, {} [rbp{}]\n",
                     self.format_reg_size(&i.reg, typesize)?,
                     self.size_specifier(typesize)?,
                     self.format_offset(offset)));
@@ -687,13 +682,12 @@ _start:
             else {
                 let t: TypeName = self.lookup_global_var(&i.name)?;
                 let typesize = self.type_size(&t)?;
-                inputs_text.push_str(&format!("mov {}, {} [{}]\n", 
+                inputs_text.push_str(&format!("    mov {}, {} [{}]\n", 
                     self.format_reg_size(&i.reg, typesize)?, 
                     self.size_specifier(typesize)?,
                     i.name));
             }
         }
-        if !inputs_text.is_empty() && self.debug {inputs_text = format!(";asm inputs: \n{inputs_text};-------\n");}
 
         //outputs: move regs into global values
         let mut outputs_text = String::new();
@@ -701,7 +695,7 @@ _start:
             if let Ok(te) = self.lookup_local_var(&i.name) {
                 let (offset, t) = te;
                 let typesize = self.type_size(&t)?;
-                outputs_text.push_str(&format!("mov {} [rbp{}], {}\n",
+                outputs_text.push_str(&format!("    mov {} [rbp{}], {}\n",
                     self.size_specifier(typesize)?,
                     self.format_offset(offset),
                     self.format_reg_size(&i.reg, typesize)?));
@@ -709,13 +703,12 @@ _start:
             else {
                 let t: TypeName = self.lookup_global_var(&i.name)?;
                 let typesize = self.type_size(&t)?;
-                outputs_text.push_str(&format!("mov {} [{}], {}\n", 
+                outputs_text.push_str(&format!("    mov {} [{}], {}\n", 
                     self.size_specifier(typesize)?,
                     i.name,
                     self.format_reg_size(&i.reg, typesize)?));
             }
         }
-        if !outputs_text.is_empty() && self.debug {outputs_text = format!(";asm outputs: \n{outputs_text};-------\n");}
 
         text.push_str(&inputs_text);
         text.push_str(&decl.code);
@@ -727,14 +720,13 @@ _start:
     fn emit_stmt(&mut self, stmt: &Stmt, ret_label: &str) -> Result<(), String> {
         let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_stmt";
 
-        let stmt_text: Option<String> = match stmt {
+        match stmt {
             Stmt::Block(stmts) => {
                 self.func.local_scopes.push(HashMap::new());
                 for s in stmts {
                     self.emit_stmt(s, ret_label)?;
                 }
                 self.func.local_scopes.pop();
-                None
             }
             Stmt::VarDecl(decl) => {
                 let (offset, t) = self.get_next_local_slot(&decl.Type)?;
@@ -750,14 +742,14 @@ _start:
                     text.push_str("pop rax\n");
 
                     text.push_str(&format!(
-                        "pop rax\nmov {} [rbp{}], {}",
+                        "mov {} [rbp{}], {}",
                         self.size_specifier(size)?,
                         self.format_offset(offset),
                         self.format_reg_size("rax", size)?
                     ));
                 }
 
-                Some(text)
+                self.push_section("text", &text)?;
             }
             Stmt::Return(ret) => {
                 let mut text = String::new();
@@ -769,40 +761,111 @@ _start:
                     "jmp {ret_label}"
                 ));
 
-                Some(text)
+                self.push_section("text", &text)?;
             }
-            /*
             Stmt::Break => {
-                todo!()
+                let label = self.loop_stack.last().unwrap();
+                
+                let text = format!(
+                    "jmp {}", 
+                    label.1
+                );
+
+                self.push_section("text", &text)?;
             }
             Stmt::Continue => {
-                todo!()
+                let label = self.loop_stack.last().unwrap();
+                
+                let text = format!(
+                    "jmp {}", 
+                    label.0
+                );
+
+                self.push_section("text", &text)?;
+            }
+            Stmt::While{cond, body} => {
+                let labelID = self.next_label_id();
+                let start_label = format!("_while_{}_start", labelID);
+                let end_label = format!("_while_{}_end", labelID);
+
+                self.loop_stack.push((start_label.clone(), end_label.clone()));
+
+                self.push_section("text", &format!("{start_label}:"))?;
+                self.emit_expr(cond)?;
+                self.push_section("text", &format!("    
+    pop rax
+    test rax, rax
+    jz {end_label}
+"))?;
+                self.emit_stmt(body, ret_label)?;
+                self.push_section("text", &format!("jmp {start_label}"))?;
+                self.push_section("text", &format!("{end_label}:"))?;
+
+                self.loop_stack.pop();
             }
             Stmt::If{cond, then_branch, else_branch} => {
                 todo!()
             }
-            Stmt::While{cond, body} => {
-                todo!()
-            }
             Stmt::For{init, cond, step, body} => {
-                todo!()
+                let labelID = self.next_label_id();
+                let start_label = format!("_for_{}_start", labelID);
+                let step_label = format!("_for_{}_step", labelID);
+                let end_label = format!("_for_{}_end", labelID);
+
+                self.func.local_scopes.push(HashMap::new()); //scope for init
+
+                //init
+                if let Some(init) = init {
+                    match init {
+                        ForInit::VarDecl(decl) => {
+                            self.emit_stmt(&Stmt::VarDecl(decl.clone()), ret_label)?;
+                        }
+                        ForInit::Expr(expr) => {
+                            self.emit_expr(expr)?;
+                            self.push_section("text", "    pop rax")?;
+                        }
+                    }
+                }
+
+                //condition
+                self.push_section("text", &format!("{start_label}:"))?;
+
+                if let Some(cond_expr) = cond {
+                    self.emit_expr(cond_expr)?;
+                    self.push_section("text", &format!("
+    pop rax
+    test rax, rax
+    jz {end_label}
+"))?;
+                }
+                //body
+                self.loop_stack.push((step_label.clone(), end_label.clone()));
+                self.emit_stmt(body, ret_label)?;
+                self.loop_stack.pop();
+
+                //step
+                self.push_section("text", &format!("{step_label}:"))?;
+                if let Some(step_expr) = step {
+                    self.emit_expr(step_expr)?;
+                    self.push_section("text", "    pop rax")?;
+                }
+
+                self.push_section("text", &format!("    jmp {start_label}"))?;
+                self.push_section("text", &format!("{end_label}:"))?;
+
+                self.func.local_scopes.pop();
+
             }
             Stmt::Expr(expr) => {
-                todo!()
+                self.emit_expr(expr)?;
             }
-            */
             Stmt::Assembly(asm) => {
                 self.emit_assembly(asm)?;
-                None
             }
             Stmt::Empty => {
-                Some("nop ; do nothing :3".to_string())
+                self.push_section("text", "nop ; do nothing :3")?;
             }
-            _ => {None}
-        };
-
-        if let Some(t) = stmt_text {
-            self.push_section("text", &t)?;
+            _ => {}
         }
 
         Ok(())
@@ -810,7 +873,7 @@ _start:
     fn emit_expr(&mut self, expr: &Expr) -> Result<(), String> {
         let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_expr";
 
-        let text = "push 0";
+        let text = "push 1";
 
         self.push_section("text", text)?;
 

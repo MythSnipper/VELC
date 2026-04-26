@@ -8,38 +8,45 @@ _start:
     ;argc and argv
     mov rdi, qword [rsp]       ;argc
     lea rsi, [rsp+8]           ;argv
-
     ;envp
     mov rax, rdi
     lea rdx, [rsi + rax*8 + 8] ;rdx = envp
-
     ;align stack to 16 bytes
     and rsp, -16
-
     call main
-
     ;exit
     mov rdi, rax
     mov rax, 60
     syscall
-
 global main
 main:
     endbr64
     push rbp
     mov rbp, rsp
-;asm inputs: 
-mov rax, qword [vel]
-mov rbx, qword [msglen]
-;-------
+    sub rsp, 16
+push 1
+pop rax
+mov dword [rbp-4], eax
+_for_2_start:
+push 1
 
-        push rax
-        mov rax, 1          ; syscall: write
-        mov rdi, 1          ; file descriptor: stdout
-        pop rsi             ; pointer to message
-        mov rdx, rbx        ; message length
-        syscall             ; invoke syscall
-    
+    pop rax
+    test rax, rax
+    jz _for_2_end
+    mov rsi, qword [vel]
+    mov rbx, qword [msglen]
+
+            mov rax, 1          ; syscall: write
+            mov rdi, 1          ; file descriptor: stdout
+            ; pointer to message in rsi
+            mov rdx, rbx        ; message length
+            syscall             ; invoke syscall
+        
+_for_2_step:
+push 1
+    pop rax
+    jmp _for_2_start
+_for_2_end:
 _main_end:
     mov rsp, rbp
     pop rbp
@@ -47,8 +54,8 @@ _main_end:
 
 section .data
 vel dq _str_1
-msglen dq 13
+msglen dq 12
 
 section .rodata
-_str_1 db "hello world!", 10, 0
+_str_1 db "I love vel", 10, 0
 
