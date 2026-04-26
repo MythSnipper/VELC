@@ -1,50 +1,15 @@
 
-/{
-global _start
-_start:
-    mov rax, 1          ; syscall: write
-    mov rdi, 1          ; file descriptor: stdout
-    mov rsi, msg        ; pointer to message
-    mov rdx, msglen     ; message length
-    syscall             ; invoke syscall
 
-    mov rax, 60         ; syscall: exit
-    xor rdi, rdi        ; exit code 0
-    syscall             ; invoke syscall
-    
-}/
+string vel = "hello world!\n";
+uint64 msglen = 13;
 
-/{$data 
-    msg db "Hello, World!", 0xA
-    msglen equ $ - msg
-    x db 1
-    y db 2
-}/
-
-
-
-
-
-
-
-
-
-
-int32 add(int8 a, int8 b, int8 c, int8 d, int16 e, int32 f, int32 g, int32 h) {
-
-    for(int32 i=0;i<10;i++) {
-        int32 i2 = i * 2;
-        int8 i = 303;
-    }
-
-
-
-    int8 result = (int8)(a + b);
-    return result;
+void main() {
+    %{
+        push rax
+        mov rax, 1          ; syscall: write
+        mov rdi, 1          ; file descriptor: stdout
+        pop rsi             ; pointer to message
+        mov rdx, rbx        ; message length
+        syscall             ; invoke syscall
+    }$ in(vel -> rax, msglen -> rbx)%
 }
-
-
-
-
-
-
