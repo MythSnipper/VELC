@@ -54,7 +54,7 @@ _main_end:
 
 section .data
 vel dq _str_1
-msglen dq 12
+msglen dq 11
 
 section .rodata
 _str_1 db "I love vel", 10, 0

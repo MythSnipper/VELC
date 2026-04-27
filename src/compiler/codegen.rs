@@ -739,10 +739,10 @@ _start:
                 if let Some(init) = decl.init.clone() {
                     self.emit_expr(&init)?;
 
-                    text.push_str("pop rax\n");
+                    text.push_str("    pop rax\n");
 
                     text.push_str(&format!(
-                        "mov {} [rbp{}], {}",
+                        "    mov {} [rbp{}], {}",
                         self.size_specifier(size)?,
                         self.format_offset(offset),
                         self.format_reg_size("rax", size)?
@@ -822,9 +822,6 @@ _start:
                     self.emit_stmt(then_branch, ret_label)?;
                     self.push_section("text", &format!("{}:", end_label))?;
                 }
-
-                
-
             }
             Stmt::For{init, cond, step, body} => {
                 let label_id = self.next_label_id();
