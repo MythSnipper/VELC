@@ -784,9 +784,9 @@ _start:
                 self.push_section("text", &text)?;
             }
             Stmt::While{cond, body} => {
-                let labelID = self.next_label_id();
-                let start_label = format!("_while_{}_start", labelID);
-                let end_label = format!("_while_{}_end", labelID);
+                let label_id = self.next_label_id();
+                let start_label = format!("_while_{}_start", label_id);
+                let end_label = format!("_while_{}_end", label_id);
 
                 self.loop_stack.push((start_label.clone(), end_label.clone()));
 
@@ -804,13 +804,33 @@ _start:
                 self.loop_stack.pop();
             }
             Stmt::If{cond, then_branch, else_branch} => {
-                todo!()
+                let label_id = self.next_label_id();
+                let else_label = format!("_if_{}_else", label_id);
+                let end_label = format!("_if_{}_end", label_id);
+                self.emit_expr(cond)?;
+                self.push_section("text", "pop rax")?;
+                self.push_section("text", "test rax, rax")?;
+                if else_branch.is_some() {
+                    self.push_section("text", &format!("jz {}", else_label))?;
+                    self.emit_stmt(then_branch, ret_label)?;
+                    self.push_section("text", &format!("jmp {}", end_label))?;
+                    self.push_section("text", &format!("{}:", else_label))?;
+                    self.emit_stmt(else_branch.as_ref().unwrap(), ret_label)?;
+                    self.push_section("text", &format!("{}:", end_label))?;
+                } else {
+                    self.push_section("text", &format!("jz {}", end_label))?;
+                    self.emit_stmt(then_branch, ret_label)?;
+                    self.push_section("text", &format!("{}:", end_label))?;
+                }
+
+                
+
             }
             Stmt::For{init, cond, step, body} => {
-                let labelID = self.next_label_id();
-                let start_label = format!("_for_{}_start", labelID);
-                let step_label = format!("_for_{}_step", labelID);
-                let end_label = format!("_for_{}_end", labelID);
+                let label_id = self.next_label_id();
+                let start_label = format!("_for_{}_start", label_id);
+                let step_label = format!("_for_{}_step", label_id);
+                let end_label = format!("_for_{}_end", label_id);
 
                 self.func.local_scopes.push(HashMap::new()); //scope for init
 
