@@ -240,7 +240,7 @@ impl CodeGenerator {
         parts.push("0".to_string()); // null terminator
         parts.join(", ")
     }
-    fn emit_static_initializer_value(&mut self, expr: &Expr, ty: &TypeName) -> Result<String, String> {
+    fn emit_static_initializer_value(&mut self, expr: &Expr) -> Result<String, String> {
         let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_static_initializer_value";
     
         match expr {
@@ -263,12 +263,12 @@ impl CodeGenerator {
             Expr::StringLiteral(s) => {
                 let label = format!("_str_{}", self.next_label_id());
                 let bytes = self.format_nasm_string_bytes(s);
-                self.push_section("rodata", &format!("{} db {}", label, bytes))?;
+                self.push_section("rodata", &format!("    {} db {}", label, bytes))?;
                 Ok(label)
             }
     
             Expr::Cast { expr, .. } => {
-                self.emit_static_initializer_value(expr, ty)
+                self.emit_static_initializer_value(expr)
             }
     
             Expr::Identifier(name) => {
@@ -538,13 +538,17 @@ impl CodeGenerator {
                 i.name, 
                 self.format_reg_size(&i.reg, typesize)?));
         }
-        if !outputs_text.is_empty() && self.debug {outputs_text = format!(";asm outputs: \n{outputs_text};-------\n");}
+        if !outputs_text.is_empty() && self.debug {outputs_text = format!("\n;asm outputs: \n{outputs_text}\n;-------");}
 
         text.push_str(&inputs_text);
         text.push_str(&decl.code);
         text.push_str(&outputs_text);
 
+        if self.debug {self.push_section(&decl.section, ";global assembly start")?;}
+
         self.push_section(&decl.section, &text)?;
+
+        if self.debug {self.push_section(&decl.section, ";global assembly end")?;}
 
         Ok(())
     }
@@ -557,11 +561,11 @@ impl CodeGenerator {
         match &decl.init {
             Some(init) => {
                 let dir = self.data_directive(&decl.Type)?;
-                let value = self.emit_static_initializer_value(init, &decl.Type)?;
+                let value = self.emit_static_initializer_value(init)?;
     
                 self.push_section(
                     "data",
-                    &format!("{} {} {}", decl.name, dir, value),
+                    &format!("    {} {} {}", decl.name, dir, value),
                 )?;
     
                 Ok(())
@@ -571,7 +575,7 @@ impl CodeGenerator {
     
                 self.push_section(
                     "bss",
-                    &format!("{} {} 1", decl.name, dir),
+                    &format!("    {} {} 1", decl.name, dir),
                 )?;
     
                 Ok(())
@@ -618,10 +622,11 @@ impl CodeGenerator {
             let size = self.type_size(&t)?;
             parameter_scope.insert(param.name.clone(), (offset, t));
 
-            self.push_section("text", &format!("    mov {} [rbp{}], {}",
+            self.push_section("text", &format!("    mov {} [rbp{}], {} ; {}",
                 self.size_specifier(size)?,
                 self.format_offset(offset),
-                self.format_reg_size(&reg, size)?
+                self.format_reg_size(&reg, size)?,
+                param.name
             ))?;
         }
         self.func.local_scopes.push(parameter_scope);
@@ -647,6 +652,7 @@ impl CodeGenerator {
     }
     fn emit_start(&mut self) -> Result<(), String> {
         self.push_section("text", "
+;runtime code
 global _start
 _start:
     endbr64
@@ -663,6 +669,10 @@ _start:
     mov rdi, rax
     mov rax, 60
     syscall
+
+
+
+
 ")
     }
     fn emit_assembly(&mut self, decl: &AssemblyDecl) -> Result<String, String> {
@@ -674,20 +684,25 @@ _start:
             if let Ok(te) = self.lookup_local_var(&i.name) {
                 let (offset, t) = te;
                 let typesize = self.type_size(&t)?;
-                inputs_text.push_str(&format!("    mov {}, {} [rbp{}]\n",
+                inputs_text.push_str(&format!("    mov {}, {} [rbp{}] ; {}\n",
                     self.format_reg_size(&i.reg, typesize)?,
                     self.size_specifier(typesize)?,
-                    self.format_offset(offset)));
+                    self.format_offset(offset),
+                    i.name
+                ));
             }
             else {
                 let t: TypeName = self.lookup_global_var(&i.name)?;
                 let typesize = self.type_size(&t)?;
-                inputs_text.push_str(&format!("    mov {}, {} [{}]\n", 
+                inputs_text.push_str(&format!("    mov {}, {} [{}] ; {}\n", 
                     self.format_reg_size(&i.reg, typesize)?, 
                     self.size_specifier(typesize)?,
-                    i.name));
+                    i.name,
+                    i.name
+                ));
             }
         }
+        if !inputs_text.is_empty() && self.debug {inputs_text = format!(";asm inputs: \n{inputs_text};-------\n");}
 
         //outputs: move regs into global values
         let mut outputs_text = String::new();
@@ -695,26 +710,36 @@ _start:
             if let Ok(te) = self.lookup_local_var(&i.name) {
                 let (offset, t) = te;
                 let typesize = self.type_size(&t)?;
-                outputs_text.push_str(&format!("    mov {} [rbp{}], {}\n",
+                outputs_text.push_str(&format!("    mov {} [rbp{}], {} ; {}\n",
                     self.size_specifier(typesize)?,
                     self.format_offset(offset),
-                    self.format_reg_size(&i.reg, typesize)?));
+                    self.format_reg_size(&i.reg, typesize)?,
+                    i.name
+                ));
             }
             else {
                 let t: TypeName = self.lookup_global_var(&i.name)?;
                 let typesize = self.type_size(&t)?;
-                outputs_text.push_str(&format!("    mov {} [{}], {}\n", 
+                outputs_text.push_str(&format!("    mov {} [{}], {} ; {}\n", 
                     self.size_specifier(typesize)?,
                     i.name,
-                    self.format_reg_size(&i.reg, typesize)?));
+                    self.format_reg_size(&i.reg, typesize)?,
+                    i.name
+                ));
             }
         }
+        if !outputs_text.is_empty() && self.debug {outputs_text = format!("\n;asm outputs: \n{outputs_text}\n;-------");}
 
         text.push_str(&inputs_text);
         text.push_str(&decl.code);
         text.push_str(&outputs_text);
 
-        self.push_section("text", &text)?;
+        if self.debug {self.push_section(&decl.section, ";assembly start")?;}
+
+        self.push_section(&decl.section, &text)?;
+
+        if self.debug {self.push_section(&decl.section, ";assembly end")?;}
+
         Ok(text)
     }
     fn emit_stmt(&mut self, stmt: &Stmt, ret_label: &str) -> Result<(), String> {
@@ -722,159 +747,31 @@ _start:
 
         match stmt {
             Stmt::Block(stmts) => {
-                self.func.local_scopes.push(HashMap::new());
-                for s in stmts {
-                    self.emit_stmt(s, ret_label)?;
-                }
-                self.func.local_scopes.pop();
+                self.emit_block(stmts, ret_label)?;
             }
             Stmt::VarDecl(decl) => {
-                let (offset, t) = self.get_next_local_slot(&decl.Type)?;
-                let size = self.type_size(&t)?;
-
-                let map = self.func.local_scopes.last_mut().unwrap();
-                map.insert(decl.name.clone(), (offset, t));
-
-                let mut text = String::new();
-                if let Some(init) = decl.init.clone() {
-                    self.emit_expr(&init)?;
-
-                    text.push_str("    pop rax\n");
-
-                    text.push_str(&format!(
-                        "    mov {} [rbp{}], {}",
-                        self.size_specifier(size)?,
-                        self.format_offset(offset),
-                        self.format_reg_size("rax", size)?
-                    ));
-                }
-
-                self.push_section("text", &text)?;
+                self.emit_var(decl, ret_label)?;
             }
             Stmt::Return(ret) => {
-                let mut text = String::new();
-                if let Some(expr) = ret {
-                    self.emit_expr(expr)?;
-                    text.push_str("pop rax\n");
-                }
-                text.push_str(&format!(
-                    "jmp {ret_label}"
-                ));
-
-                self.push_section("text", &text)?;
+                self.emit_return(ret, ret_label)?;
             }
             Stmt::Break => {
-                let label = self.loop_stack.last().unwrap();
-                
-                let text = format!(
-                    "jmp {}", 
-                    label.1
-                );
-
-                self.push_section("text", &text)?;
+                self.emit_break(ret_label)?;
             }
             Stmt::Continue => {
-                let label = self.loop_stack.last().unwrap();
-                
-                let text = format!(
-                    "jmp {}", 
-                    label.0
-                );
-
-                self.push_section("text", &text)?;
+                self.emit_continue(ret_label)?;
             }
             Stmt::While{cond, body} => {
-                let label_id = self.next_label_id();
-                let start_label = format!("_while_{}_start", label_id);
-                let end_label = format!("_while_{}_end", label_id);
-
-                self.loop_stack.push((start_label.clone(), end_label.clone()));
-
-                self.push_section("text", &format!("{start_label}:"))?;
-                self.emit_expr(cond)?;
-                self.push_section("text", &format!("    
-    pop rax
-    test rax, rax
-    jz {end_label}
-"))?;
-                self.emit_stmt(body, ret_label)?;
-                self.push_section("text", &format!("jmp {start_label}"))?;
-                self.push_section("text", &format!("{end_label}:"))?;
-
-                self.loop_stack.pop();
+                self.emit_while(cond, body, ret_label)?;
             }
             Stmt::If{cond, then_branch, else_branch} => {
-                let label_id = self.next_label_id();
-                let else_label = format!("_if_{}_else", label_id);
-                let end_label = format!("_if_{}_end", label_id);
-                self.emit_expr(cond)?;
-                self.push_section("text", "pop rax")?;
-                self.push_section("text", "test rax, rax")?;
-                if else_branch.is_some() {
-                    self.push_section("text", &format!("jz {}", else_label))?;
-                    self.emit_stmt(then_branch, ret_label)?;
-                    self.push_section("text", &format!("jmp {}", end_label))?;
-                    self.push_section("text", &format!("{}:", else_label))?;
-                    self.emit_stmt(else_branch.as_ref().unwrap(), ret_label)?;
-                    self.push_section("text", &format!("{}:", end_label))?;
-                } else {
-                    self.push_section("text", &format!("jz {}", end_label))?;
-                    self.emit_stmt(then_branch, ret_label)?;
-                    self.push_section("text", &format!("{}:", end_label))?;
-                }
+                self.emit_if(cond, then_branch, else_branch, ret_label)?;
             }
             Stmt::For{init, cond, step, body} => {
-                let label_id = self.next_label_id();
-                let start_label = format!("_for_{}_start", label_id);
-                let step_label = format!("_for_{}_step", label_id);
-                let end_label = format!("_for_{}_end", label_id);
-
-                self.func.local_scopes.push(HashMap::new()); //scope for init
-
-                //init
-                if let Some(init) = init {
-                    match init {
-                        ForInit::VarDecl(decl) => {
-                            self.emit_stmt(&Stmt::VarDecl(decl.clone()), ret_label)?;
-                        }
-                        ForInit::Expr(expr) => {
-                            self.emit_expr(expr)?;
-                            self.push_section("text", "    pop rax")?;
-                        }
-                    }
-                }
-
-                //condition
-                self.push_section("text", &format!("{start_label}:"))?;
-
-                if let Some(cond_expr) = cond {
-                    self.emit_expr(cond_expr)?;
-                    self.push_section("text", &format!("
-    pop rax
-    test rax, rax
-    jz {end_label}
-"))?;
-                }
-                //body
-                self.loop_stack.push((step_label.clone(), end_label.clone()));
-                self.emit_stmt(body, ret_label)?;
-                self.loop_stack.pop();
-
-                //step
-                self.push_section("text", &format!("{step_label}:"))?;
-                if let Some(step_expr) = step {
-                    self.emit_expr(step_expr)?;
-                    self.push_section("text", "    pop rax")?;
-                }
-
-                self.push_section("text", &format!("    jmp {start_label}"))?;
-                self.push_section("text", &format!("{end_label}:"))?;
-
-                self.func.local_scopes.pop();
-
+                self.emit_for(init, cond, step, body, ret_label)?;
             }
             Stmt::Expr(expr) => {
-                self.emit_expr(expr)?;
+                self.emit_expr_stmt(expr, ret_label)?;
             }
             Stmt::Assembly(asm) => {
                 self.emit_assembly(asm)?;
@@ -882,22 +779,529 @@ _start:
             Stmt::Empty => {
                 self.push_section("text", "nop ; do nothing :3")?;
             }
-            _ => {}
         }
 
         Ok(())
     }
-    fn emit_expr(&mut self, expr: &Expr) -> Result<(), String> {
-        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_expr";
-
-        let text = "push 1";
-
-        self.push_section("text", text)?;
-
+    fn emit_block(&mut self, stmts: &Vec<Stmt>, ret_label: &str) -> Result<(), String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_block";
+        self.func.local_scopes.push(HashMap::new());
+        for s in stmts {
+            self.emit_stmt(s, ret_label)?;
+        }
+        self.func.local_scopes.pop();
         Ok(())
     }
+    fn emit_expr_stmt(&mut self, expr: &Expr, ret_label: &str) -> Result<(), String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_expr_stmt";
+        self.emit_expr(expr)?;
+        self.push_section("text", "    pop rax")?;
+        Ok(())
+    }
+    fn emit_var(&mut self, decl: &VarDecl, ret_label: &str) -> Result<(), String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_expr_stmt";
+        let (offset, t) = self.get_next_local_slot(&decl.Type)?;
+        let size = self.type_size(&t)?;
 
+        let map = self.func.local_scopes.last_mut().unwrap();
+        map.insert(decl.name.clone(), (offset, t));
 
+        let mut text = String::new();
+        if let Some(init) = decl.init.clone() {
+            self.emit_expr(&init)?;
+
+            text.push_str("    pop rax\n");
+
+            text.push_str(&format!(
+                "    mov {} [rbp{}], {}",
+                self.size_specifier(size)?,
+                self.format_offset(offset),
+                self.format_reg_size("rax", size)?
+            ));
+        }
+
+        self.push_section("text", &text)?;
+        Ok(())
+    }
+    fn emit_return(&mut self, ret: &Option<Expr>, ret_label: &str) -> Result<(), String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_return";
+        let mut text = String::new();
+        if let Some(expr) = ret {
+            self.emit_expr(expr)?;
+            text.push_str("    pop rax\n");
+        }
+        text.push_str(&format!(
+            "    jmp {ret_label}"
+        ));
+
+        self.push_section("text", &text)?;
+        Ok(())
+    }
+    fn emit_break(&mut self, ret_label: &str) -> Result<(), String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_break";
+        let label = self.loop_stack.last().unwrap();
+                
+        let text = format!(
+            "    jmp {}", 
+            label.1
+        );
+
+        self.push_section("text", &text)?;
+        Ok(())
+    }
+    fn emit_continue(&mut self, ret_label: &str) -> Result<(), String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_continue";
+        let label = self.loop_stack.last().unwrap();
+                
+        let text = format!(
+            "    jmp {}", 
+            label.0
+        );
+
+        self.push_section("text", &text)?;
+        Ok(())
+    }
+    fn emit_while(&mut self, cond: &Expr, body: &Box<Stmt>, ret_label: &str) -> Result<(), String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_while";
+        let label_id = self.next_label_id();
+        let start_label = format!("_while_{}_start", label_id);
+        let end_label = format!("_while_{}_end", label_id);
+
+        self.loop_stack.push((start_label.clone(), end_label.clone()));
+
+        self.push_section("text", &format!("{start_label}:"))?;
+        self.emit_expr(cond)?;
+        self.push_section("text", &format!("    
+    pop rax
+    test rax, rax
+    jz {end_label}
+"))?;
+        self.emit_stmt(body, ret_label)?;
+        self.push_section("text", &format!("    jmp {start_label}"))?;
+        self.push_section("text", &format!("{end_label}:"))?;
+
+        self.loop_stack.pop();
+        Ok(())
+    }
+    fn emit_if(&mut self, cond: &Expr, then_branch: &Stmt, else_branch: &Option<Box<Stmt>>, ret_label: &str) -> Result<(), String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_if";
+        let label_id = self.next_label_id();
+        let else_label = format!("_if_{}_else", label_id);
+        let end_label = format!("_if_{}_end", label_id);
+        self.emit_expr(cond)?;
+        self.push_section("text", "    pop rax")?;
+        self.push_section("text", "    test rax, rax")?;
+        if else_branch.is_some() {
+            self.push_section("text", &format!("    jz {}", else_label))?;
+            self.emit_stmt(then_branch, ret_label)?;
+            self.push_section("text", &format!("    jmp {}", end_label))?;
+            self.push_section("text", &format!("{}:", else_label))?;
+            self.emit_stmt(else_branch.as_ref().unwrap(), ret_label)?;
+            self.push_section("text", &format!("{}:", end_label))?;
+        }
+        else {
+            self.push_section("text", &format!("    jz {}", end_label))?;
+            self.emit_stmt(then_branch, ret_label)?;
+            self.push_section("text", &format!("{}:", end_label))?;
+        }
+        Ok(())
+    }
+    fn emit_for(&mut self, init: &Option<ForInit>, cond: &Option<Expr>, step: &Option<Expr>, body: &Stmt, ret_label: &str) -> Result<(), String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_for";
+        let label_id = self.next_label_id();
+        let start_label = format!("_for_{}_start", label_id);
+        let step_label = format!("_for_{}_step", label_id);
+        let end_label = format!("_for_{}_end", label_id);
+
+        self.func.local_scopes.push(HashMap::new()); //scope for init
+
+        //init
+        if let Some(init) = init {
+            match init {
+                ForInit::VarDecl(decl) => {
+                    self.emit_stmt(&Stmt::VarDecl(decl.clone()), ret_label)?;
+                }
+                ForInit::Expr(expr) => {
+                    self.emit_expr(expr)?;
+                    self.push_section("text", "    pop rax")?;
+                }
+            }
+        }
+
+        //condition
+        self.push_section("text", &format!("{start_label}:"))?;
+
+        if let Some(cond_expr) = cond {
+            self.emit_expr(cond_expr)?;
+            self.push_section("text", &format!("
+    pop rax
+    test rax, rax
+    jz {end_label}
+"))?;
+        }
+        //body
+        self.loop_stack.push((step_label.clone(), end_label.clone()));
+        self.emit_stmt(body, ret_label)?;
+        self.loop_stack.pop();
+
+        //step
+        self.push_section("text", &format!("{step_label}:"))?;
+        if let Some(step_expr) = step {
+            self.emit_expr(step_expr)?;
+            self.push_section("text", "    pop rax")?;
+        }
+
+        self.push_section("text", &format!("    jmp {start_label}"))?;
+        self.push_section("text", &format!("{end_label}:"))?;
+
+        self.func.local_scopes.pop();
+        Ok(())
+    }
+    
+    fn emit_expr(&mut self, expr: &Expr) -> Result<TypeName, String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_expr";
+
+        let ty = match expr {
+            Expr::BoolLiteral(val) => {
+                self.push_section("text", &format!("    push qword {} ; bool literal",
+                    if *val {1} else {0} 
+                ))?;
+                TypeName::Builtin(BuiltinType::Bool)
+            }
+            Expr::IntLiteral(val) => {
+                self.push_section("text", &format!("    push qword {val} ; int literal"))?;
+                TypeName::Builtin(BuiltinType::Int64)
+            }
+            Expr::FloatLiteral(val) => {
+                return self.error(ERROR_STRING_ROOT, "Floats are not supported!")?;
+                TypeName::Builtin(BuiltinType::Float64)
+            }
+            Expr::CharLiteral(val) => {
+                self.push_section("text", &format!("    push qword '{}' ; char literal",
+                    val
+                ))?;
+                TypeName::Builtin(BuiltinType::Char)
+            }
+            Expr::StringLiteral(val) => {
+                let str_ptr = self.emit_static_initializer_value(expr)?;
+                self.push_section("text", &format!("    push {str_ptr}"))?;
+                TypeName::Builtin(BuiltinType::String)
+            }
+            Expr::Identifier(id) => {
+                self.emit_identifier(id)?
+            }
+            Expr::Grouping(expr) => {
+                self.emit_expr(expr)?
+            }
+            Expr::Prefix{op, expr} => {
+                self.emit_prefix(op, expr)?
+            }
+            Expr::Postfix{op, expr} => {
+                self.emit_postfix(op, expr)?
+            }
+            Expr::Binary{left, op, right} => {
+                self.emit_binary(left, op, right)?
+            }
+            Expr::Assign {left, op, right} => {
+                self.emit_assign(left, op, right)?
+            }
+            Expr::Cast {Type, expr} => {
+                self.emit_cast(Type, expr)?
+            }
+            Expr::Call { .. } => {
+                return self.error(ERROR_STRING_ROOT, "Function calls are not implemented in backend yet");
+            }
+            Expr::Index { .. } => {
+                return self.error(ERROR_STRING_ROOT, "Index expressions are not implemented in backend yet");
+            }
+            Expr::Member { .. } => {
+                return self.error(ERROR_STRING_ROOT, "Member access is not implemented in backend yet");
+            }
+            _ => {self.push_section("text", "    push 2")?;TypeName::Builtin(BuiltinType::Int64)}
+        };
+        Ok(ty)
+    }
+    fn emit_identifier(&mut self, id: &str) -> Result<TypeName, String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_identifier";
+        let mut text = String::new();
+                
+        let ret = if let Ok(te) = self.lookup_local_var(id) {
+            let (offset, t) = te;
+            let typesize = self.type_size(&t)?;
+            if typesize != 8 {
+                match self.type_sign(&t)? {
+                    Sign::Unsigned => {
+                        text.push_str(&format!("    movzx rax, {} [rbp{}] ; {}\n",
+                            self.size_specifier(typesize)?,
+                            self.format_offset(offset),
+                            id
+                        ));
+                    }
+                    Sign::Signed => {
+                        text.push_str(&format!("    movsx rax, {} [rbp{}] ; {}\n",
+                            self.size_specifier(typesize)?,
+                            self.format_offset(offset),
+                            id
+                        ));
+                    }
+                };
+                text.push_str(&format!("    push rax ; {}\n",
+                    id
+                ));
+            }
+            else {
+                text.push_str(&format!("    push qword [rbp{}] ; {}\n",
+                    self.format_offset(offset),
+                    id
+                ));
+            }
+            t
+        }
+        else {
+            let t: TypeName = self.lookup_global_var(id)?;
+            let typesize = self.type_size(&t)?;
+            if typesize != 8 {
+                match self.type_sign(&t)? {
+                    Sign::Unsigned => {
+                        text.push_str(&format!("    movzx rax, {} [{}] ; {id}\n",
+                            self.size_specifier(typesize)?,
+                            id
+                        ));
+                    }
+                    Sign::Signed => {
+                        text.push_str(&format!("    movsx rax, {} [{}] ; {id}\n",
+                            self.size_specifier(typesize)?,
+                            id
+                        ));
+                    }
+                };
+                text.push_str(&format!("    push rax ; {}\n",
+                    id
+                ));
+            }
+            else {
+                text.push_str(&format!("    push qword [{}] ; {id}\n",
+                    id
+                ));
+            }
+            t
+        };
+
+        self.push_section("text", &text)?;
+
+        Ok(ret)
+    }
+    fn emit_prefix(&mut self, op: &PrefixOp, expr: &Box<Expr>) -> Result<TypeName, String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_prefix";
+
+        let ret = match op {
+            PrefixOp::LogicalNot => {
+                self.emit_expr(expr)?;
+
+                self.push_section("text", "    pop rax")?;
+                self.push_section("text", "    test rax, rax")?;
+                self.push_section("text", "    setz al")?;
+                self.push_section("text", "    movzx rax, al")?;
+                self.push_section("text", "    push rax")?;
+
+                TypeName::Builtin(BuiltinType::Bool)
+            }
+            PrefixOp::BitwiseNot => {
+                let expr_type = self.emit_expr(expr)?;
+                self.push_section("text", "    pop rax")?;
+                self.push_section("text", "    not rax")?;
+                self.push_section("text", "    push rax")?;
+
+                expr_type
+            }
+            PrefixOp::Inc => {
+                let expr_type = self.emit_expr(expr)?;
+                self.push_section("text", "    pop rax")?;
+                self.push_section("text", "    inc rax")?;
+                self.push_section("text", "    push rax")?;
+                expr_type
+            }
+            PrefixOp::Dec => {
+                let expr_type = self.emit_expr(expr)?;
+                self.push_section("text", "    pop rax")?;
+                self.push_section("text", "    dec rax")?;
+                self.push_section("text", "    push rax")?;
+                expr_type
+            }
+            PrefixOp::Plus => {
+                let expr_type = self.emit_expr(expr)?;
+                self.push_section("text", "    nop ;unary +")?;
+                expr_type
+            }
+            PrefixOp::Neg => {
+                let expr_type = self.emit_expr(expr)?;
+                self.push_section("text", "    pop rax")?;
+                self.push_section("text", "    neg rax")?;
+                self.push_section("text", "    push rax")?;
+
+                expr_type
+            }
+            PrefixOp::Ref => {
+                let ty = self.emit_addr(expr)?;
+                TypeName::Pointer(Box::new(ty))
+            }
+            PrefixOp::Deref => {
+                let ptr_ty = self.emit_expr(expr)?;
+
+                let inner_ty = match ptr_ty {
+                    TypeName::Pointer(inner) => *inner,
+                    _ => return self.error(ERROR_STRING_ROOT, "Cannot dereference non-pointer"),
+                };
+
+                let size = self.type_size(&inner_ty)?;
+
+                self.push_section("text", "    pop rax")?;
+
+                match size {
+                    1 => match self.type_sign(&inner_ty)? {
+                        Sign::Unsigned => self.push_section("text", "    movzx rax, byte [rax]")?,
+                        Sign::Signed => self.push_section("text", "    movsx rax, byte [rax]")?,
+                    },
+                    2 => match self.type_sign(&inner_ty)? {
+                        Sign::Unsigned => self.push_section("text", "    movzx rax, word [rax]")?,
+                        Sign::Signed => self.push_section("text", "    movsx rax, word [rax]")?,
+                    },
+                    4 => match self.type_sign(&inner_ty)? {
+                        Sign::Unsigned => self.push_section("text", "    mov eax, dword [rax]")?,
+                        Sign::Signed => self.push_section("text", "    movsxd rax, dword [rax]")?,
+                    },
+                    8 => self.push_section("text", "    mov rax, qword [rax]")?,
+                    _ => return self.error(ERROR_STRING_ROOT, "Unsupported dereference size"),
+                }
+
+                self.push_section("text", "    push rax")?;
+                inner_ty
+            }
+        };
+        Ok(ret)
+    }
+    fn emit_addr(&mut self, expr: &Expr) -> Result<TypeName, String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_addr";
+    
+        match expr {
+            Expr::Identifier(name) => {
+                if let Ok((offset, ty)) = self.lookup_local_var(name) {
+                    self.push_section("text", &format!(
+                        "    lea rax, [rbp{}]",
+                        self.format_offset(offset)
+                    ))?;
+                    self.push_section("text", "    push rax")?;
+                    Ok(ty)
+                }
+                else {
+                    let ty = self.lookup_global_var(name)?;
+                    self.push_section("text", &format!("    lea rax, [{}]", name))?;
+                    self.push_section("text", "    push rax")?;
+                    Ok(ty)
+                }
+            }
+    
+            _ => self.error(ERROR_STRING_ROOT, "Expression is not addressable"),
+        }
+    }
+    fn emit_postfix(&mut self, op: &PostfixOp, expr: &Box<Expr>) -> Result<TypeName, String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_postfix";
+
+        let ret = match op {
+            PostfixOp::Inc => {
+                let expr_type = self.emit_expr(expr)?;
+                self.push_section("text", "    pop rax")?;
+                self.push_section("text", "    inc rax")?;
+                self.push_section("text", "    push rax")?;
+                expr_type
+            }
+            PostfixOp::Dec => {
+                let expr_type = self.emit_expr(expr)?;
+                self.push_section("text", "    pop rax")?;
+                self.push_section("text", "    dec rax")?;
+                self.push_section("text", "    push rax")?;
+                expr_type
+            }
+        };
+        Ok(ret)
+    }
+    fn emit_binary(&mut self, left: &Box<Expr>, op: &BinaryOp, right: &Box<Expr>) -> Result<TypeName, String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_postfix";
+
+        let expr_type = self.emit_expr(left)?;
+        let ret = match op {
+            BinaryOp::Add => {
+                self.push_section("text", "    pop rax")?;
+                self.push_section("text", "    inc rax")?;
+                self.push_section("text", "    push rax")?;
+                expr_type
+            }
+            BinaryOp::Sub => {
+                expr_type
+            }
+            BinaryOp::Mul => {
+                expr_type
+            }
+            BinaryOp::Div => {
+                expr_type
+            }
+            BinaryOp::Mod => {
+                expr_type
+            }
+
+            BinaryOp::Eq => {
+                expr_type
+            }
+            BinaryOp::Neq => {
+                expr_type
+            }
+            BinaryOp::Lt => {
+                expr_type
+            }
+            BinaryOp::Gt => {
+                expr_type
+            }
+            BinaryOp::Lte => {
+                expr_type
+            }
+            BinaryOp::Gte => {
+                expr_type
+            }
+
+            BinaryOp::BitwiseAnd => {
+                expr_type
+            }
+            BinaryOp::BitwiseOr => {
+                expr_type
+            }
+            BinaryOp::BitwiseXor => {
+                expr_type
+            }
+            BinaryOp::Lshift => {
+                expr_type
+            }
+            BinaryOp::Rshift => {
+                expr_type
+            }
+
+            BinaryOp::LogicalAnd => {
+                expr_type
+            }
+            BinaryOp::LogicalOr => {
+                expr_type
+            }
+            BinaryOp::LogicalXor => {
+                expr_type
+            }
+        };
+        Ok(ret)
+    }
+    fn emit_assign(&mut self, left: &Box<Expr>, op: &AssignOp, right: &Box<Expr>) -> Result<TypeName, String> {
+        todo!()
+    }
+    fn emit_cast(&mut self, t: &TypeName, expr: &Box<Expr>) -> Result<TypeName, String> {
+        todo!()
+    }
 
 
 

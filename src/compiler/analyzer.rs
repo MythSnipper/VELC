@@ -80,7 +80,7 @@ impl Analyzer {
                 Type,
             },
         );
-
+        
         Ok(())
     }
 

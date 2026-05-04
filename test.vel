@@ -2,14 +2,46 @@
 string vel = "I love vel\n";
 uint64 msglen = 11;
 
-void main() {
-    for(int32 i=0;i<5;i++){
-        %{
-            mov rax, 1          ; syscall: write
-            mov rdi, 1          ; file descriptor: stdout
-            ; pointer to message in rsi
-            mov rdx, rbx        ; message length
-            syscall             ; invoke syscall
-        }$ in(vel -> rsi, msglen -> rbx)%
-    }
+uint64 main() {
+
+    float64 meow = 995204154 / 10583 * 293719 / 2239 * 67071;
+
+    return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void putchar(char out) {
+    %{
+        mov rax, 1          ; syscall: write
+        mov rdi, 1          ; file descriptor: stdout
+        ; pointer to message in rsi
+        mov rdx, 1          ; message length
+        syscall
+    }$ in(out -> rsi)%
+}
+void puts(string str, uint64 strlen) {
+    %{
+        mov rax, 1          ; syscall: write
+        mov rdi, 1          ; file descriptor: stdout
+        ; pointer to message in rsi
+        ; message length in rdx
+        syscall
+    }$ in(str -> rsi, strlen -> rdx)%
 }
