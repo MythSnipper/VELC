@@ -1,54 +1,57 @@
 
-string vel = "I love vel\n";
-uint64 msglen = 11;
-
 uint64 main() {
-    char* pstr = (char*)"hello";
-
-
-
+    uint64 len = strlen("meow");
+    for(int32 i=0;i<200000;i++){
+        printlnlen("meow", len);
+    }
     return 0;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+uint64 strlen(string str) {
+    uint64 length = 0;
+    while((*(char*)str) != 0){
+        length++;
+        str = (string)((uint64)str + 1);
+    }
+    return length;
+}
 void putchar(char out) {
+    char* outptr = &out;
     %{
         mov rax, 1          ; syscall: write
         mov rdi, 1          ; file descriptor: stdout
         ; pointer to message in rsi
         mov rdx, 1          ; message length
         syscall
-    }$ in(out -> rsi)%
+    }$ in(outptr -> rsi)%
 }
-void puts(string str, uint64 strlen) {
+void println(string str) {
+    uint64 len = strlen(str);
     %{
         mov rax, 1          ; syscall: write
         mov rdi, 1          ; file descriptor: stdout
         ; pointer to message in rsi
         ; message length in rdx
         syscall
-    }$ in(str -> rsi, strlen -> rdx)%
+    }$ in(str -> rsi, len -> rdx)%
+    putchar('\n');
 }
-
-
-
+void printlnlen(string str, uint64 len) {
+    %{
+        mov rax, 1          ; syscall: write
+        mov rdi, 1          ; file descriptor: stdout
+        ; pointer to message in rsi
+        ; message length in rdx
+        syscall
+    }$ in(str -> rsi, len -> rdx)%
+    putchar('\n');
+}
+void print_uint64(uint64 num) {
+    if (num >= 10) {
+        print_uint64(num / 10);
+    }
+    putchar((char)((num % 10) + '0'));
+}
 
 
 

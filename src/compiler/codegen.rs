@@ -23,7 +23,10 @@ pub struct CodeGenerator {
     label_id: usize,
 
     globals: HashMap<String, TypeName>, //identifier, type
+    functions: HashMap<String, TypeName>, //function signatures for call to check
     func: FunctionFrame,
+
+
     loop_stack: Vec<(String, String)>, // (continue_label, break_label)
 }
 impl CodeGenerator {
@@ -35,7 +38,10 @@ impl CodeGenerator {
             label_id: 0,
 
             globals: HashMap::new(),
+            functions: HashMap::new(),
             func: FunctionFrame::default(),
+
+
             loop_stack: Vec::new(),
         }
     }
@@ -95,9 +101,6 @@ impl CodeGenerator {
         }
 
         Ok(())
-    }
-    fn debug_str(&mut self, text: &str, pad: &str) -> String {
-        format!(";{pad} start\n{text};{pad} end\n")
     }
 
     fn type_size(&self, Type: &TypeName) -> Result<usize, String> {
@@ -343,6 +346,77 @@ impl CodeGenerator {
     
         Ok(())
     }
+    fn collect_top_level_symbols(&mut self, program: &Program) -> Result<(), String> {
+        for item in &program.items {
+            match item {
+                TopLevel::Function(decl) => {
+                    let params = decl
+                        .params
+                        .iter()
+                        .map(|p| p.Type.clone())
+                        .collect::<Vec<TypeName>>();
+
+                    self.functions.insert(
+                        decl.name.clone(),
+                        TypeName::Function {
+                            ret: Box::new(decl.ret.clone()),
+                            params,
+                        },
+                    );
+                }
+
+                TopLevel::GlobalVar(decl) => {
+                    self.globals.insert(decl.name.clone(), decl.Type.clone());
+                }
+
+                TopLevel::Assembly(_) => {}
+            }
+        }
+
+        Ok(())
+    }
+    fn lookup_function(&self, name: &str) -> Result<TypeName, String> {
+        
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:lookup_function";
+
+        if let Some(t) = self.functions.get(name) {
+            return Ok(t.clone());
+        }
+
+        self.error(ERROR_STRING_ROOT, &format!("Unknown function '{}'", name))
+    }
+    fn unpack_callable_type(&self, t: TypeName) -> Result<(TypeName, Vec<TypeName>), String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:unpack_callable_type";
+
+        match t {
+            TypeName::Function { ret, params } => {
+                Ok((*ret, params))
+            }
+
+            TypeName::Pointer(inner) => {
+                match *inner {
+                    TypeName::Function { ret, params } => {
+                        Ok((*ret, params))
+                    }
+
+                    other => {
+                        self.error(
+                            ERROR_STRING_ROOT,
+                            &format!("Pointer does not point to function type: {:?}", other),
+                        )
+                    }
+                }
+            }
+
+            other => {
+                self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("Expression is not callable: {:?}", other),
+                )
+            }
+        }
+    }
+
     fn lookup_global_var(&self, name: &str) -> Result<TypeName, String> {
         let ERROR_STRING_ROOT = "velc:CodeGenerator:lookup_global_var";
 
@@ -493,6 +567,8 @@ impl CodeGenerator {
     }
 
     fn emit_program(&mut self, program: &Program) -> Result<(), String> {
+        self.collect_top_level_symbols(program)?;
+        
         for item in &program.items {
             self.emit_top_level(item)?;
         }
@@ -977,9 +1053,11 @@ _start:
                 TypeName::Builtin(BuiltinType::Float64)
             }
             Expr::CharLiteral(val) => {
-                self.push_section("text", &format!("    push qword '{}' ; char literal",
-                    val
-                ))?;
+                self.push_section(
+                    "text",
+                    &format!("    push qword {} ; char literal", *val as u32),
+                )?;
+
                 TypeName::Builtin(BuiltinType::Char)
             }
             Expr::StringLiteral(val) => {
@@ -1008,8 +1086,8 @@ _start:
             Expr::Cast {Type, expr} => {
                 self.emit_cast(Type, expr)?
             }
-            Expr::Call { .. } => {
-                return self.error(ERROR_STRING_ROOT, "Function calls are not implemented in backend yet");
+            Expr::Call {callee, args} => {
+                self.emit_call(callee, args)?
             }
             Expr::Index { .. } => {
                 return self.error(ERROR_STRING_ROOT, "Index expressions are not implemented in backend yet");
@@ -1097,7 +1175,7 @@ _start:
             PrefixOp::LogicalNot => {
                 self.emit_expr(expr)?;
 
-                self.push_section("text", "    pop rax")?;
+                self.push_section("text", "    pop rax ; logical not")?;
                 self.push_section("text", "    test rax, rax")?;
                 self.push_section("text", "    setz al")?;
                 self.push_section("text", "    movzx rax, al")?;
@@ -1107,25 +1185,106 @@ _start:
             }
             PrefixOp::BitwiseNot => {
                 let expr_type = self.emit_expr(expr)?;
-                self.push_section("text", "    pop rax")?;
+                self.push_section("text", "    pop rax ; bitwise not")?;
                 self.push_section("text", "    not rax")?;
                 self.push_section("text", "    push rax")?;
 
                 expr_type
             }
             PrefixOp::Inc => {
-                let expr_type = self.emit_expr(expr)?;
-                self.push_section("text", "    pop rax")?;
+                let expr_type = self.emit_addr(expr)?;
+                let size = self.type_size(&expr_type)?;
+
+                self.push_section("text", "    mov rcx, rax ; prefix inc addr")?;
+
+                match size {
+                    1 => match self.type_sign(&expr_type)? {
+                        Sign::Unsigned => self.push_section("text", "    movzx rax, byte [rcx]")?,
+                        Sign::Signed => self.push_section("text", "    movsx rax, byte [rcx]")?,
+                    },
+
+                    2 => match self.type_sign(&expr_type)? {
+                        Sign::Unsigned => self.push_section("text", "    movzx rax, word [rcx]")?,
+                        Sign::Signed => self.push_section("text", "    movsx rax, word [rcx]")?,
+                    },
+
+                    4 => match self.type_sign(&expr_type)? {
+                        Sign::Unsigned => self.push_section("text", "    mov eax, dword [rcx]")?,
+                        Sign::Signed => self.push_section("text", "    movsxd rax, dword [rcx]")?,
+                    },
+
+                    8 => {
+                        self.push_section("text", "    mov rax, qword [rcx]")?;
+                    }
+
+                    _ => {
+                        return self.error(ERROR_STRING_ROOT, "Unsupported prefix increment size");
+                    }
+                }
+
                 self.push_section("text", "    inc rax")?;
-                self.push_section("text", "    push rax")?;
+
+                self.push_section("text", &format!(
+                    "    mov {} [rcx], {}",
+                    self.size_specifier(size)?,
+                    self.format_reg_size("rax", size)?
+                ))?;
+
+                self.push_section("text", "    push rax ; prefix inc result")?;
+
                 expr_type
             }
+
             PrefixOp::Dec => {
-                let expr_type = self.emit_expr(expr)?;
-                self.push_section("text", "    pop rax")?;
+                let expr_type = self.emit_addr(expr)?;
+                let size = self.type_size(&expr_type)?;
+
+                self.push_section("text", "    mov rcx, rax ; prefix dec addr")?;
+
+                match size {
+                    1 => match self.type_sign(&expr_type)? {
+                        Sign::Unsigned => self.push_section("text", "    movzx rax, byte [rcx]")?,
+                        Sign::Signed => self.push_section("text", "    movsx rax, byte [rcx]")?,
+                    },
+
+                    2 => match self.type_sign(&expr_type)? {
+                        Sign::Unsigned => self.push_section("text", "    movzx rax, word [rcx]")?,
+                        Sign::Signed => self.push_section("text", "    movsx rax, word [rcx]")?,
+                    },
+
+                    4 => match self.type_sign(&expr_type)? {
+                        Sign::Unsigned => self.push_section("text", "    mov eax, dword [rcx]")?,
+                        Sign::Signed => self.push_section("text", "    movsxd rax, dword [rcx]")?,
+                    },
+
+                    8 => {
+                        self.push_section("text", "    mov rax, qword [rcx]")?;
+                    }
+
+                    _ => {
+                        return self.error(ERROR_STRING_ROOT, "Unsupported prefix decrement size");
+                    }
+                }
+
                 self.push_section("text", "    dec rax")?;
-                self.push_section("text", "    push rax")?;
+
+                self.push_section("text", &format!(
+                    "    mov {} [rcx], {}",
+                    self.size_specifier(size)?,
+                    self.format_reg_size("rax", size)?
+                ))?;
+
+                self.push_section("text", "    push rax ; prefix dec result")?;
+
                 expr_type
+            }
+
+            PrefixOp::Ref => {
+                let ty = self.emit_addr(expr)?;
+
+                self.push_section("text", "    push rax ; ref result")?;
+
+                TypeName::Pointer(Box::new(ty))
             }
             PrefixOp::Plus => {
                 let expr_type = self.emit_expr(expr)?;
@@ -1139,10 +1298,6 @@ _start:
                 self.push_section("text", "    push rax")?;
 
                 expr_type
-            }
-            PrefixOp::Ref => {
-                let ty = self.emit_addr(expr)?;
-                TypeName::Pointer(Box::new(ty))
             }
             PrefixOp::Deref => {
                 let ptr_ty = self.emit_expr(expr)?;
@@ -1285,87 +1440,616 @@ _start:
         Ok(expr_type)
     }
     fn emit_binary(&mut self, left: &Box<Expr>, op: &BinaryOp, right: &Box<Expr>) -> Result<TypeName, String> {
-        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_postfix";
+    let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_binary";
 
-        let expr_type = self.emit_expr(left)?;
-        let ret = match op {
-            BinaryOp::Add => {
-                self.push_section("text", "    pop rax")?;
-                self.push_section("text", "    inc rax")?;
-                self.push_section("text", "    push rax")?;
-                expr_type
-            }
-            BinaryOp::Sub => {
-                expr_type
-            }
-            BinaryOp::Mul => {
-                expr_type
-            }
-            BinaryOp::Div => {
-                expr_type
-            }
-            BinaryOp::Mod => {
-                expr_type
-            }
+    match op {
+        BinaryOp::LogicalAnd => {
+            let id = self.next_label_id();
+            let false_label = format!("_logical_and_{}_false", id);
+            let end_label = format!("_logical_and_{}_end", id);
 
-            BinaryOp::Eq => {
-                expr_type
-            }
-            BinaryOp::Neq => {
-                expr_type
-            }
-            BinaryOp::Lt => {
-                expr_type
-            }
-            BinaryOp::Gt => {
-                expr_type
-            }
-            BinaryOp::Lte => {
-                expr_type
-            }
-            BinaryOp::Gte => {
-                expr_type
-            }
+            self.emit_expr(left)?;
+            self.push_section("text", "    pop rax")?;
+            self.push_section("text", "    test rax, rax")?;
+            self.push_section("text", &format!("    jz {}", false_label))?;
 
-            BinaryOp::BitwiseAnd => {
-                expr_type
-            }
-            BinaryOp::BitwiseOr => {
-                expr_type
-            }
-            BinaryOp::BitwiseXor => {
-                expr_type
-            }
-            BinaryOp::Lshift => {
-                expr_type
-            }
-            BinaryOp::Rshift => {
-                expr_type
-            }
+            self.emit_expr(right)?;
+            self.push_section("text", "    pop rax")?;
+            self.push_section("text", "    test rax, rax")?;
+            self.push_section("text", &format!("    jz {}", false_label))?;
 
-            BinaryOp::LogicalAnd => {
-                expr_type
-            }
-            BinaryOp::LogicalOr => {
-                expr_type
-            }
-            BinaryOp::LogicalXor => {
-                expr_type
-            }
-        };
-        Ok(ret)
+            self.push_section("text", "    push qword 1")?;
+            self.push_section("text", &format!("    jmp {}", end_label))?;
+            self.push_section("text", &format!("{}:", false_label))?;
+            self.push_section("text", "    push qword 0")?;
+            self.push_section("text", &format!("{}:", end_label))?;
+
+            return Ok(TypeName::Builtin(BuiltinType::Bool));
+        }
+
+        BinaryOp::LogicalOr => {
+            let id = self.next_label_id();
+            let true_label = format!("_logical_or_{}_true", id);
+            let end_label = format!("_logical_or_{}_end", id);
+
+            self.emit_expr(left)?;
+            self.push_section("text", "    pop rax")?;
+            self.push_section("text", "    test rax, rax")?;
+            self.push_section("text", &format!("    jnz {}", true_label))?;
+
+            self.emit_expr(right)?;
+            self.push_section("text", "    pop rax")?;
+            self.push_section("text", "    test rax, rax")?;
+            self.push_section("text", &format!("    jnz {}", true_label))?;
+
+            self.push_section("text", "    push qword 0")?;
+            self.push_section("text", &format!("    jmp {}", end_label))?;
+            self.push_section("text", &format!("{}:", true_label))?;
+            self.push_section("text", "    push qword 1")?;
+            self.push_section("text", &format!("{}:", end_label))?;
+
+            return Ok(TypeName::Builtin(BuiltinType::Bool));
+        }
+
+        _ => {}
     }
+
+    let left_type = self.emit_expr(left)?;
+    let _right_type = self.emit_expr(right)?;
+
+    self.push_section("text", "    pop rcx ; binary right")?;
+    self.push_section("text", "    pop rax ; binary left")?;
+
+    let ret_type = match op {
+        BinaryOp::Add => {
+            self.push_section("text", "    add rax, rcx")?;
+            left_type
+        }
+
+        BinaryOp::Sub => {
+            self.push_section("text", "    sub rax, rcx")?;
+            left_type
+        }
+
+        BinaryOp::Mul => {
+            self.push_section("text", "    imul rax, rcx")?;
+            left_type
+        }
+
+        BinaryOp::Div => {
+            match self.type_sign(&left_type)? {
+                Sign::Signed => {
+                    self.push_section("text", "    cqo")?;
+                    self.push_section("text", "    idiv rcx")?;
+                }
+
+                Sign::Unsigned => {
+                    self.push_section("text", "    xor rdx, rdx")?;
+                    self.push_section("text", "    div rcx")?;
+                }
+            }
+
+            left_type
+        }
+
+        BinaryOp::Mod => {
+            match self.type_sign(&left_type)? {
+                Sign::Signed => {
+                    self.push_section("text", "    cqo")?;
+                    self.push_section("text", "    idiv rcx")?;
+                    self.push_section("text", "    mov rax, rdx")?;
+                }
+
+                Sign::Unsigned => {
+                    self.push_section("text", "    xor rdx, rdx")?;
+                    self.push_section("text", "    div rcx")?;
+                    self.push_section("text", "    mov rax, rdx")?;
+                }
+            }
+
+            left_type
+        }
+
+        BinaryOp::Eq => {
+            self.push_section("text", "    cmp rax, rcx")?;
+            self.push_section("text", "    sete al")?;
+            self.push_section("text", "    movzx rax, al")?;
+
+            TypeName::Builtin(BuiltinType::Bool)
+        }
+
+        BinaryOp::Neq => {
+            self.push_section("text", "    cmp rax, rcx")?;
+            self.push_section("text", "    setne al")?;
+            self.push_section("text", "    movzx rax, al")?;
+
+            TypeName::Builtin(BuiltinType::Bool)
+        }
+
+        BinaryOp::Lt => {
+            self.push_section("text", "    cmp rax, rcx")?;
+
+            match self.type_sign(&left_type)? {
+                Sign::Signed => self.push_section("text", "    setl al")?,
+                Sign::Unsigned => self.push_section("text", "    setb al")?,
+            }
+
+            self.push_section("text", "    movzx rax, al")?;
+
+            TypeName::Builtin(BuiltinType::Bool)
+        }
+
+        BinaryOp::Gt => {
+            self.push_section("text", "    cmp rax, rcx")?;
+
+            match self.type_sign(&left_type)? {
+                Sign::Signed => self.push_section("text", "    setg al")?,
+                Sign::Unsigned => self.push_section("text", "    seta al")?,
+            }
+
+            self.push_section("text", "    movzx rax, al")?;
+
+            TypeName::Builtin(BuiltinType::Bool)
+        }
+
+        BinaryOp::Lte => {
+            self.push_section("text", "    cmp rax, rcx")?;
+
+            match self.type_sign(&left_type)? {
+                Sign::Signed => self.push_section("text", "    setle al")?,
+                Sign::Unsigned => self.push_section("text", "    setbe al")?,
+            }
+
+            self.push_section("text", "    movzx rax, al")?;
+
+            TypeName::Builtin(BuiltinType::Bool)
+        }
+
+        BinaryOp::Gte => {
+            self.push_section("text", "    cmp rax, rcx")?;
+
+            match self.type_sign(&left_type)? {
+                Sign::Signed => self.push_section("text", "    setge al")?,
+                Sign::Unsigned => self.push_section("text", "    setae al")?,
+            }
+
+            self.push_section("text", "    movzx rax, al")?;
+
+            TypeName::Builtin(BuiltinType::Bool)
+        }
+
+        BinaryOp::BitwiseAnd => {
+            self.push_section("text", "    and rax, rcx")?;
+            left_type
+        }
+
+        BinaryOp::BitwiseOr => {
+            self.push_section("text", "    or rax, rcx")?;
+            left_type
+        }
+
+        BinaryOp::BitwiseXor => {
+            self.push_section("text", "    xor rax, rcx")?;
+            left_type
+        }
+
+        BinaryOp::Lshift => {
+            self.push_section("text", "    shl rax, cl")?;
+            left_type
+        }
+
+        BinaryOp::Rshift => {
+            match self.type_sign(&left_type)? {
+                Sign::Signed => self.push_section("text", "    sar rax, cl")?,
+                Sign::Unsigned => self.push_section("text", "    shr rax, cl")?,
+            }
+
+            left_type
+        }
+
+        BinaryOp::LogicalXor => {
+            self.push_section("text", "    test rax, rax")?;
+            self.push_section("text", "    setne al")?;
+            self.push_section("text", "    movzx rax, al")?;
+
+            self.push_section("text", "    test rcx, rcx")?;
+            self.push_section("text", "    setne cl")?;
+            self.push_section("text", "    movzx rcx, cl")?;
+
+            self.push_section("text", "    xor rax, rcx")?;
+
+            TypeName::Builtin(BuiltinType::Bool)
+        }
+
+        BinaryOp::LogicalAnd | BinaryOp::LogicalOr => {
+            return self.error(ERROR_STRING_ROOT, "unreachable logical binary path");
+        }
+    };
+
+    self.push_section("text", "    push rax ; binary result")?;
+
+    Ok(ret_type)
+}
     fn emit_assign(&mut self, left: &Box<Expr>, op: &AssignOp, right: &Box<Expr>) -> Result<TypeName, String> {
-        todo!()
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_assign";
+
+        let left_type = self.emit_addr(left)?;
+        let size = self.type_size(&left_type)?;
+
+        match op {
+            AssignOp::Assign => {
+                // rax = address of left
+                self.push_section("text", "    push rax ; assignment destination address")?;
+
+                // stack: address, right_value
+                self.emit_expr(right)?;
+
+                self.push_section("text", "    pop rax ; assignment value")?;
+                self.push_section("text", "    pop rcx ; assignment destination address")?;
+
+                self.push_section("text", &format!(
+                    "    mov {} [rcx], {}",
+                    self.size_specifier(size)?,
+                    self.format_reg_size("rax", size)?
+                ))?;
+
+                // Assignment expression result.
+                self.push_section("text", "    push rax ; assignment result")?;
+
+                Ok(left_type)
+            }
+
+            AssignOp::AddAssign
+            | AssignOp::SubAssign
+            | AssignOp::MulAssign
+            | AssignOp::DivAssign
+            | AssignOp::ModAssign
+            | AssignOp::AndAssign
+            | AssignOp::OrAssign
+            | AssignOp::XorAssign
+            | AssignOp::LshiftAssign
+            | AssignOp::RshiftAssign => {
+                // rax = address of left
+                self.push_section("text", "    push rax ; compound assignment destination address")?;
+
+                self.push_section("text", "    mov rcx, rax ; load compound left value")?;
+
+                match size {
+                    1 => match self.type_sign(&left_type)? {
+                        Sign::Unsigned => self.push_section("text", "    movzx rax, byte [rcx]")?,
+                        Sign::Signed => self.push_section("text", "    movsx rax, byte [rcx]")?,
+                    },
+
+                    2 => match self.type_sign(&left_type)? {
+                        Sign::Unsigned => self.push_section("text", "    movzx rax, word [rcx]")?,
+                        Sign::Signed => self.push_section("text", "    movsx rax, word [rcx]")?,
+                    },
+
+                    4 => match self.type_sign(&left_type)? {
+                        Sign::Unsigned => self.push_section("text", "    mov eax, dword [rcx]")?,
+                        Sign::Signed => self.push_section("text", "    movsxd rax, dword [rcx]")?,
+                    },
+
+                    8 => {
+                        self.push_section("text", "    mov rax, qword [rcx]")?;
+                    }
+
+                    _ => {
+                        return self.error(
+                            ERROR_STRING_ROOT,
+                            &format!("Unsupported compound assignment size {}", size),
+                        );
+                    }
+                }
+
+                self.push_section("text", "    push rax ; compound assignment left value")?;
+
+                // stack: address, left_value, right_value
+                self.emit_expr(right)?;
+
+                self.push_section("text", "    pop r10 ; compound assignment right value")?;
+                self.push_section("text", "    pop rax ; compound assignment left value")?;
+                self.push_section("text", "    pop rcx ; compound assignment destination address")?;
+
+                match op {
+                    AssignOp::AddAssign => {
+                        self.push_section("text", "    add rax, r10")?;
+                    }
+
+                    AssignOp::SubAssign => {
+                        self.push_section("text", "    sub rax, r10")?;
+                    }
+
+                    AssignOp::MulAssign => {
+                        self.push_section("text", "    imul rax, r10")?;
+                    }
+
+                    AssignOp::DivAssign => {
+                        match self.type_sign(&left_type)? {
+                            Sign::Signed => {
+                                self.push_section("text", "    cqo")?;
+                                self.push_section("text", "    idiv r10")?;
+                            }
+
+                            Sign::Unsigned => {
+                                self.push_section("text", "    xor rdx, rdx")?;
+                                self.push_section("text", "    div r10")?;
+                            }
+                        }
+                    }
+
+                    AssignOp::ModAssign => {
+                        match self.type_sign(&left_type)? {
+                            Sign::Signed => {
+                                self.push_section("text", "    cqo")?;
+                                self.push_section("text", "    idiv r10")?;
+                                self.push_section("text", "    mov rax, rdx")?;
+                            }
+
+                            Sign::Unsigned => {
+                                self.push_section("text", "    xor rdx, rdx")?;
+                                self.push_section("text", "    div r10")?;
+                                self.push_section("text", "    mov rax, rdx")?;
+                            }
+                        }
+                    }
+
+                    AssignOp::AndAssign => {
+                        self.push_section("text", "    and rax, r10")?;
+                    }
+
+                    AssignOp::OrAssign => {
+                        self.push_section("text", "    or rax, r10")?;
+                    }
+
+                    AssignOp::XorAssign => {
+                        self.push_section("text", "    xor rax, r10")?;
+                    }
+
+                    AssignOp::LshiftAssign => {
+                        self.push_section("text", "    mov r11, rcx ; save destination address")?;
+                        self.push_section("text", "    mov rcx, r10 ; shift count")?;
+                        self.push_section("text", "    shl rax, cl")?;
+                        self.push_section("text", "    mov rcx, r11 ; restore destination address")?;
+                    }
+
+                    AssignOp::RshiftAssign => {
+                        self.push_section("text", "    mov r11, rcx ; save destination address")?;
+                        self.push_section("text", "    mov rcx, r10 ; shift count")?;
+
+                        match self.type_sign(&left_type)? {
+                            Sign::Signed => self.push_section("text", "    sar rax, cl")?,
+                            Sign::Unsigned => self.push_section("text", "    shr rax, cl")?,
+                        }
+
+                        self.push_section("text", "    mov rcx, r11 ; restore destination address")?;
+                    }
+
+                    _ => {
+                        return self.error(
+                            ERROR_STRING_ROOT,
+                            &format!("Unsupported compound assignment operator {:?}", op),
+                        );
+                    }
+                }
+
+                self.push_section("text", &format!(
+                    "    mov {} [rcx], {}",
+                    self.size_specifier(size)?,
+                    self.format_reg_size("rax", size)?
+                ))?;
+
+                self.push_section("text", "    push rax ; compound assignment result")?;
+
+                Ok(left_type)
+            }
+
+            AssignOp::NotAssign => {
+                self.error(ERROR_STRING_ROOT, "NotAssign is not implemented yet")
+            }
+        }
     }
     fn emit_cast(&mut self, t: &TypeName, expr: &Box<Expr>) -> Result<TypeName, String> {
-        todo!()
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_cast";
+
+        self.emit_expr(expr)?;
+
+        self.push_section("text", "    pop rax ; cast source value")?;
+
+        match t {
+            TypeName::Builtin(BuiltinType::Void) => {
+                return self.error(ERROR_STRING_ROOT, "Cannot cast to void");
+            }
+
+            TypeName::Builtin(BuiltinType::Float32)
+            | TypeName::Builtin(BuiltinType::Float64)
+            | TypeName::FloatLiteral => {
+                return self.error(ERROR_STRING_ROOT, "Float casts are not implemented in backend yet");
+            }
+
+            TypeName::Array(_, _) => {
+                return self.error(ERROR_STRING_ROOT, "Array casts are not implemented yet");
+            }
+
+            TypeName::Function { .. } => {
+                return self.error(ERROR_STRING_ROOT, "Function casts are not implemented yet");
+            }
+
+            TypeName::IntLiteral => {
+                return self.error(ERROR_STRING_ROOT, "Cannot cast to IntLiteral pseudo-type");
+            }
+
+            TypeName::Builtin(BuiltinType::Bool) => {
+                self.push_section("text", "    test rax, rax")?;
+                self.push_section("text", "    setne al")?;
+                self.push_section("text", "    movzx rax, al")?;
+            }
+
+            TypeName::Builtin(BuiltinType::String) => {
+                // string is pointer-sized in the backend.
+                // A cast to string just treats the current qword as a string pointer.
+            }
+
+            TypeName::Pointer(_) => {
+                // pointers are pointer-sized in the backend.
+                // A cast to pointer just treats the current qword as an address.
+            }
+
+            TypeName::Builtin(BuiltinType::Int8)
+            | TypeName::Builtin(BuiltinType::Char) => {
+                self.push_section("text", "    movsx rax, al")?;
+            }
+
+            TypeName::Builtin(BuiltinType::Uint8) => {
+                self.push_section("text", "    movzx rax, al")?;
+            }
+
+            TypeName::Builtin(BuiltinType::Int16) => {
+                self.push_section("text", "    movsx rax, ax")?;
+            }
+
+            TypeName::Builtin(BuiltinType::Uint16) => {
+                self.push_section("text", "    movzx rax, ax")?;
+            }
+
+            TypeName::Builtin(BuiltinType::Int32) => {
+                self.push_section("text", "    movsxd rax, eax")?;
+            }
+
+            TypeName::Builtin(BuiltinType::Uint32) => {
+                // Writing to eax zero-extends into rax.
+                self.push_section("text", "    mov eax, eax")?;
+            }
+
+            TypeName::Builtin(BuiltinType::Int64)
+            | TypeName::Builtin(BuiltinType::Uint64) => {
+                // Already a full qword in rax.
+            }
+        }
+
+        self.push_section("text", &format!("    push rax ; cast result to {:?}", t))?;
+
+        Ok(t.clone())
     }
+    fn emit_call(&mut self, callee: &Box<Expr>, args: &Vec<Expr>) -> Result<TypeName, String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_call";
 
+        let mut direct_label: Option<String> = None;
+        let mut target_is_on_stack = false;
 
+        let callable_type = match callee.as_ref() {
+            Expr::Identifier(name) => {
+                if let Ok(function_type) = self.lookup_function(name) {
+                    direct_label = Some(name.clone());
+                    function_type
+                } else {
+                    // Could be a local/global function pointer variable.
+                    let t = self.emit_expr(callee)?;
+                    target_is_on_stack = true;
+                    t
+                }
+            }
 
+            Expr::Prefix {
+                op: PrefixOp::Deref,
+                expr,
+            } => {
+                // Special case for (*fp)(args).
+                //
+                // Do NOT use emit_expr(callee) here, because emit_expr(*fp)
+                // would load memory at the function address. For a function call,
+                // the pointer value itself is the call target.
+                let t = self.emit_expr(expr)?;
+                target_is_on_stack = true;
+                t
+            }
 
+            _ => {
+                // General function pointer expression.
+                let t = self.emit_expr(callee)?;
+                target_is_on_stack = true;
+                t
+            }
+        };
 
+        let (ret_type, param_types) = self.unpack_callable_type(callable_type)?;
+
+        if args.len() != param_types.len() {
+            return self.error(
+                ERROR_STRING_ROOT,
+                &format!(
+                    "Call expected {} arguments, got {}",
+                    param_types.len(),
+                    args.len()
+                ),
+            );
+        }
+
+        if args.len() > 6 {
+            return self.error(
+                ERROR_STRING_ROOT,
+                "More than 6 call arguments are not supported yet",
+            );
+        }
+
+        // If this is an indirect call, the target pointer is already on the stack
+        // below the argument values.
+        //
+        // Stack for fp(a, b), after callee and args:
+        //
+        //     function_pointer
+        //     arg0
+        //     arg1 <- rsp
+        //
+        // Then we pop arg1 into rsi, arg0 into rdi, and function_pointer into r11.
+
+        for arg in args {
+            self.emit_expr(arg)?;
+        }
+
+        for i in (0..args.len()).rev() {
+            let reg = self.arg_register(i).ok_or_else(|| {
+                format!(
+                    "{}:Missing argument register for argument {}\n",
+                    ERROR_STRING_ROOT,
+                    i
+                )
+            })?;
+
+            self.push_section("text", &format!("    pop {} ; call argument {}", reg, i))?;
+        }
+
+        if target_is_on_stack {
+            self.push_section("text", "    pop r11 ; indirect call target")?;
+        }
+
+        // Preserve the caller's current expression-stack position while temporarily
+        // aligning rsp for the ABI call.
+        //
+        // This matters because there may already be expression values below rsp,
+        // for example in: x + foo()
+        self.push_section("text", "    mov r10, rsp ; save caller rsp before call")?;
+        self.push_section("text", "    and rsp, -16")?;
+        self.push_section("text", "    sub rsp, 16")?;
+        self.push_section("text", "    mov [rsp], r10")?;
+
+        if let Some(label) = direct_label {
+            self.push_section("text", &format!("    call {}", label))?;
+        } else {
+            self.push_section("text", "    call r11")?;
+        }
+
+        self.push_section("text", "    mov rsp, [rsp] ; restore caller rsp after call")?;
+
+        // Keep emit_expr invariant: one qword result is pushed.
+        //
+        // For void functions this is a dummy value. The semantic analyzer should
+        // prevent using void call results where a value is required.
+        self.push_section("text", "    push rax ; call result")?;
+
+        Ok(ret_type)
+    }
+    
     fn error<T>(&self, base: &str, err: &str) -> Result<T, String> {
         Err(format!("{base}:{err}\n"))
     }

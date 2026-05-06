@@ -155,6 +155,9 @@ impl Analyzer {
     fn is_pointer_type(&self, Type: &TypeName) -> bool {
         matches!(Type, TypeName::Pointer(_))
     }
+    fn is_string_type(&self, Type: &TypeName) -> bool {
+        matches!(Type, TypeName::Builtin(BuiltinType::String))
+    }
     fn is_int_literal_type(&self, Type: &TypeName) -> bool {
         matches!(Type, TypeName::IntLiteral)
     }
@@ -405,70 +408,97 @@ impl Analyzer {
         false
     }
     fn can_cast(&self, target: &TypeName, source: &TypeName) -> bool {
-        if target == source {
-            return true;
-        }
-    
-        if self.is_void_type(target) || self.is_void_type(source) {
-            return false;
-        }
-    
-        // literal -> integer
-        if self.is_integer_type(target) && self.is_int_literal_type(source) {
-            return true;
-        }
-    
-        if self.is_integer_type(target) && self.is_float_literal_type(source) {
-            return true;
-        }
-    
-        // literal -> float
-        if self.is_float_type(target) && self.is_int_literal_type(source) {
-            return true;
-        }
-    
-        if self.is_float_type(target) && self.is_float_literal_type(source) {
-            return true;
-        }
-    
-        // concrete integer <-> concrete integer
-        if self.integer_width(target).is_some() && self.integer_width(source).is_some() {
-            return true;
-        }
-    
-        // concrete float <-> concrete float
-        if self.float_width(target).is_some() && self.float_width(source).is_some() {
-            return true;
-        }
-    
-        // concrete integer <-> concrete float
-        if self.integer_width(target).is_some() && self.float_width(source).is_some() {
-            return true;
-        }
-    
-        if self.float_width(target).is_some() && self.integer_width(source).is_some() {
-            return true;
-        }
-    
-        // pointer <-> pointer
-        if self.is_pointer_type(target) && self.is_pointer_type(source) {
-            return true;
-        }
-    
-        // pointer <-> integer
-        if self.is_pointer_type(target) && self.integer_width(source).is_some() {
-            return true;
-        }
-    
-        if self.integer_width(target).is_some() && self.is_pointer_type(source) {
-            return true;
-        }
-    
-        //add new rules
-
-        
-        false
+    if target == source {
+        return true;
     }
+
+    if self.is_void_type(target) || self.is_void_type(source) {
+        return false;
+    }
+
+    // literal -> integer
+    if self.is_integer_type(target) && self.is_int_literal_type(source) {
+        return true;
+    }
+
+    if self.is_integer_type(target) && self.is_float_literal_type(source) {
+        return true;
+    }
+
+    // literal -> float
+    if self.is_float_type(target) && self.is_int_literal_type(source) {
+        return true;
+    }
+
+    if self.is_float_type(target) && self.is_float_literal_type(source) {
+        return true;
+    }
+
+    // concrete integer <-> concrete integer
+    if self.integer_width(target).is_some() && self.integer_width(source).is_some() {
+        return true;
+    }
+
+    // concrete float <-> concrete float
+    if self.float_width(target).is_some() && self.float_width(source).is_some() {
+        return true;
+    }
+
+    // concrete integer <-> concrete float
+    if self.integer_width(target).is_some() && self.float_width(source).is_some() {
+        return true;
+    }
+
+    if self.float_width(target).is_some() && self.integer_width(source).is_some() {
+        return true;
+    }
+
+    // pointer <-> pointer
+    if self.is_pointer_type(target) && self.is_pointer_type(source) {
+        return true;
+    }
+
+    // string <-> pointer
+    //
+    // string is backend-lowered as a pointer-sized value, but semantically it is
+    // still its own builtin type. So allow this only as an explicit cast.
+    if self.is_string_type(target) && self.is_pointer_type(source) {
+        return true;
+    }
+
+    if self.is_pointer_type(target) && self.is_string_type(source) {
+        return true;
+    }
+
+    // pointer <-> integer
+    if self.is_pointer_type(target) && self.integer_width(source).is_some() {
+        return true;
+    }
+
+    if self.integer_width(target).is_some() && self.is_pointer_type(source) {
+        return true;
+    }
+
+    // string <-> pointer
+    if self.is_string_type(target) && self.is_pointer_type(source) {
+        return true;
+    }
+
+    if self.is_pointer_type(target) && self.is_string_type(source) {
+        return true;
+    }
+
+    // string <-> integer
+    if self.is_string_type(target) && self.integer_width(source).is_some() {
+        return true;
+    }
+
+    if self.integer_width(target).is_some() && self.is_string_type(source) {
+        return true;
+    }
+
+    false
+}
 
     fn enter_loop(&mut self) {
         self.loop_depth += 1;
