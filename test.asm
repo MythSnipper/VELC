@@ -28,39 +28,6 @@ main:
     endbr64
     push rbp
     mov rbp, rsp
-    sub rsp, 32
-    lea rax, [rel _str_2] ; string literal
-    push rax
-    pop rax
-    mov qword [rbp-8], rax
-    push qword [vel] ; vel
-    pop rax
-    mov qword [rbp-16], rax
-    lea rax, [vel]
-    push rax
-    pop rax
-    mov qword [rbp-24], rax
-    push qword 0 ; int literal
-    pop rax
-    mov dword [rbp-28], eax
-_for_3_start:
-    movsx rax, dword [rbp-28] ; i
-    push rax ; i
-
-    pop rax
-    test rax, rax
-    jz _for_3_end
-    push 2
-    pop rax
-_for_3_step:
-    movsx rax, dword [rbp-28] ; i
-    push rax ; i
-    pop rax
-    inc rax
-    push rax
-    pop rax
-    jmp _for_3_start
-_for_3_end:
     push qword 0 ; int literal
     pop rax
     jmp _main_end
@@ -123,5 +90,4 @@ section .data
 
 section .rodata
     _str_1 db "I love vel", 10, 0
-    _str_2 db "stringliteral", 0
 

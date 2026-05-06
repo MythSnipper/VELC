@@ -3,8 +3,9 @@ string vel = "I love vel\n";
 uint64 msglen = 11;
 
 uint64 main() {
+    char* pstr = (char*)"hello";
 
-    float64 meow = 995204154 / 10583 * 293719 / 2239 * 67071;
+
 
     return 0;
 }
@@ -45,3 +46,9 @@ void puts(string str, uint64 strlen) {
         syscall
     }$ in(str -> rsi, strlen -> rdx)%
 }
+
+
+
+
+
+

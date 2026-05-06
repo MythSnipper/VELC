@@ -973,7 +973,7 @@ _start:
                 TypeName::Builtin(BuiltinType::Int64)
             }
             Expr::FloatLiteral(val) => {
-                return self.error(ERROR_STRING_ROOT, "Floats are not supported!")?;
+                return self.error(ERROR_STRING_ROOT, "Floats are not supported!");
                 TypeName::Builtin(BuiltinType::Float64)
             }
             Expr::CharLiteral(val) => {
@@ -1017,7 +1017,6 @@ _start:
             Expr::Member { .. } => {
                 return self.error(ERROR_STRING_ROOT, "Member access is not implemented in backend yet");
             }
-            _ => {self.push_section("text", "    push 2")?;TypeName::Builtin(BuiltinType::Int64)}
         };
         Ok(ty)
     }
@@ -1187,43 +1186,103 @@ _start:
             Expr::Identifier(name) => {
                 if let Ok((offset, ty)) = self.lookup_local_var(name) {
                     self.push_section("text", &format!(
-                        "    lea rax, [rbp{}]",
-                        self.format_offset(offset)
+                        "    lea rax, [rbp{}] ; &{}",
+                        self.format_offset(offset),
+                        name
                     ))?;
-                    self.push_section("text", "    push rax")?;
                     Ok(ty)
                 }
                 else {
                     let ty = self.lookup_global_var(name)?;
-                    self.push_section("text", &format!("    lea rax, [{}]", name))?;
-                    self.push_section("text", "    push rax")?;
+                    self.push_section("text", &format!(
+                        "    lea rax, [{}] ; &{}",
+                        name,
+                        name
+                    ))?;
                     Ok(ty)
                 }
             }
+            Expr::Prefix {
+                op: PrefixOp::Deref,
+                expr,
+            } => {
+                let ptr_ty = self.emit_expr(expr)?;
     
-            _ => self.error(ERROR_STRING_ROOT, "Expression is not addressable"),
+                self.push_section("text", "    pop rax ; pointer value used as address")?;
+    
+                match ptr_ty {
+                    TypeName::Pointer(inner) => Ok(*inner),
+    
+                    other => self.error(
+                        ERROR_STRING_ROOT,
+                        &format!("Cannot dereference non-pointer type {:?}", other),
+                    ),
+                }
+            }
+            Expr::Index { .. } => {
+                return self.error(ERROR_STRING_ROOT, "Index expressions are not addressable yet");
+            }
+            Expr::Member { .. } => {
+                return self.error(ERROR_STRING_ROOT, "Member expressions are not addressable yet");
+            }
+            _ => {
+                return self.error(ERROR_STRING_ROOT, "Expression is not addressable");
+            }
         }
     }
     fn emit_postfix(&mut self, op: &PostfixOp, expr: &Box<Expr>) -> Result<TypeName, String> {
         let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_postfix";
-
-        let ret = match op {
+    
+        let expr_type = self.emit_addr(expr)?;
+        let size = self.type_size(&expr_type)?;
+    
+        self.push_section("text", "    mov rcx, rax ; postfix address")?;
+    
+        match size {
+            1 => match self.type_sign(&expr_type)? {
+                Sign::Unsigned => self.push_section("text", "    movzx rax, byte [rcx]")?,
+                Sign::Signed => self.push_section("text", "    movsx rax, byte [rcx]")?,
+            },
+    
+            2 => match self.type_sign(&expr_type)? {
+                Sign::Unsigned => self.push_section("text", "    movzx rax, word [rcx]")?,
+                Sign::Signed => self.push_section("text", "    movsx rax, word [rcx]")?,
+            },
+    
+            4 => match self.type_sign(&expr_type)? {
+                Sign::Unsigned => self.push_section("text", "    mov eax, dword [rcx]")?,
+                Sign::Signed => self.push_section("text", "    movsxd rax, dword [rcx]")?,
+            },
+    
+            8 => {
+                self.push_section("text", "    mov rax, qword [rcx]")?;
+            }
+    
+            _ => {
+                return self.error(ERROR_STRING_ROOT, "Unsupported postfix operand size");
+            }
+        }
+    
+        // Postfix result is the old value.
+        self.push_section("text", "    push rax ; postfix old value")?;
+    
+        match op {
             PostfixOp::Inc => {
-                let expr_type = self.emit_expr(expr)?;
-                self.push_section("text", "    pop rax")?;
                 self.push_section("text", "    inc rax")?;
-                self.push_section("text", "    push rax")?;
-                expr_type
             }
+    
             PostfixOp::Dec => {
-                let expr_type = self.emit_expr(expr)?;
-                self.push_section("text", "    pop rax")?;
                 self.push_section("text", "    dec rax")?;
-                self.push_section("text", "    push rax")?;
-                expr_type
             }
-        };
-        Ok(ret)
+        }
+    
+        self.push_section("text", &format!(
+            "    mov {} [rcx], {}",
+            self.size_specifier(size)?,
+            self.format_reg_size("rax", size)?
+        ))?;
+    
+        Ok(expr_type)
     }
     fn emit_binary(&mut self, left: &Box<Expr>, op: &BinaryOp, right: &Box<Expr>) -> Result<TypeName, String> {
         let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_postfix";
