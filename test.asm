@@ -23,153 +23,6 @@ _start:
 
 
 
-global main
-main:
-    endbr64
-    push rbp
-    mov rbp, rsp
-    push _str_1
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call printline
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; discard expr
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call testing
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; discard expr
-    push qword 0 ; int literal
-    pop rax ; put ret value in rax
-    jmp _main_end ; return
-_main_end:
-    mov rsp, rbp
-    pop rbp
-    ret
-
-
-
-
-
-global testing
-testing:
-    endbr64
-    push rbp
-    mov rbp, rsp
-    sub rsp, 16 ; function locals
-    push qword 0 ; int literal
-    pop rax ; extract initializer expr
-    mov qword [rbp-8], rax ; i
-_for_2_start:
-    push qword [rbp-8] ; i
-    push qword 30 ; int literal
-    pop rcx ; binary right
-    pop rax ; binary left
-    cmp rax, rcx
-    setl al
-    movzx rax, al
-    push rax ; binary result
-
-    pop rax
-    test rax, rax
-    jz _for_2_end
-    push qword [rbp-8] ; i
-    push qword 2 ; int literal
-    pop rcx ; binary right
-    pop rax ; binary left
-    cqo
-    idiv rcx
-    mov rax, rdx
-    push rax ; binary result
-    push qword 1 ; int literal
-    pop rcx ; binary right
-    pop rax ; binary left
-    cmp rax, rcx
-    sete al
-    movzx rax, al
-    push rax ; binary result
-    pop rax ; if condition check
-    test rax, rax
-    jz _if_3_else
-    push _str_4
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call print
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; discard expr
-    push qword [rbp-8] ; i
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call print_uint64
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; discard expr
-    push qword 10 ; char literal
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call putchar
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; discard expr
-    jmp _if_3_end
-_if_3_else:
-    push _str_5
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call print
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; discard expr
-    push qword 10 ; char literal
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call putchar
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; discard expr
-_if_3_end:
-_for_2_step:
-    lea rax, [rbp-8] ; &i
-    mov rcx, rax ; postfix address
-    mov rax, qword [rcx]
-    push rax ; postfix old value
-    inc rax
-    mov qword [rcx], rax
-    pop rax
-    jmp _for_2_start
-_for_2_end:
-_testing_end:
-    mov rsp, rbp
-    pop rbp
-    ret
-
-
-
-
-
 global strlen
 strlen:
     endbr64
@@ -180,7 +33,7 @@ strlen:
     push qword 0 ; int literal
     pop rax ; extract initializer expr
     mov qword [rbp-16], rax ; length
-_while_6_start:
+_while_1_start:
     push qword [rbp-8] ; str
     pop rax ; cast source value
     push rax ; cast result to Pointer(Builtin(Char))
@@ -197,7 +50,7 @@ _while_6_start:
     
     pop rax ; while condition check
     test rax, rax
-    jz _while_6_end
+    jz _while_1_end
     lea rax, [rbp-16] ; &length
     mov rcx, rax ; postfix address
     mov rax, qword [rcx]
@@ -222,8 +75,8 @@ _while_6_start:
     mov qword [rcx], rax
     push rax ; assignment result
     pop rax ; discard expr
-    jmp _while_6_start
-_while_6_end:
+    jmp _while_1_start
+_while_1_end:
     push qword [rbp-16] ; length
     pop rax ; put ret value in rax
     jmp _strlen_end ; return
@@ -236,8 +89,8 @@ _strlen_end:
 
 
 
-global putchar
-putchar:
+global print_char
+print_char:
     endbr64
     push rbp
     mov rbp, rsp
@@ -257,7 +110,7 @@ putchar:
         syscall
     
 ;assembly end
-_putchar_end:
+_print_char_end:
     mov rsp, rbp
     pop rbp
     ret
@@ -266,8 +119,8 @@ _putchar_end:
 
 
 
-global print
-print:
+global print_string
+print_string:
     endbr64
     push rbp
     mov rbp, rsp
@@ -295,7 +148,7 @@ print:
         syscall
     
 ;assembly end
-_print_end:
+_print_string_end:
     mov rsp, rbp
     pop rbp
     ret
@@ -304,56 +157,8 @@ _print_end:
 
 
 
-global printline
-printline:
-    endbr64
-    push rbp
-    mov rbp, rsp
-    sub rsp, 16 ; function locals
-    mov qword [rbp-8], rdi ; function parameter str
-    push qword [rbp-8] ; str
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call strlen
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; extract initializer expr
-    mov qword [rbp-16], rax ; len
-;assembly start
-    mov rsi, qword [rbp-8] ; asm input str
-    mov rdx, qword [rbp-16] ; asm input len
-
-        mov rax, 1          ; syscall: write
-        mov rdi, 1          ; file descriptor: stdout
-        ; pointer to message in rsi
-        ; message length in rdx
-        syscall
-    
-;assembly end
-    push qword 10 ; char literal
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call putchar
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; discard expr
-_printline_end:
-    mov rsp, rbp
-    pop rbp
-    ret
-
-
-
-
-
-global print_uint64
-print_uint64:
+global print_uint
+print_uint:
     endbr64
     push rbp
     mov rbp, rsp
@@ -369,7 +174,7 @@ print_uint64:
     push rax ; binary result
     pop rax ; if condition check
     test rax, rax
-    jz _if_7_end
+    jz _if_2_end
     push qword [rbp-8] ; num
     push qword 10 ; int literal
     pop rcx ; binary right
@@ -382,11 +187,11 @@ print_uint64:
     and rsp, -16
     sub rsp, 16
     mov [rsp], r10
-    call print_uint64
+    call print_uint
     mov rsp, [rsp] ; restore caller rsp after call
     push rax ; call result
     pop rax ; discard expr
-_if_7_end:
+_if_2_end:
     push qword [rbp-8] ; num
     push qword 10 ; int literal
     pop rcx ; binary right
@@ -408,11 +213,206 @@ _if_7_end:
     and rsp, -16
     sub rsp, 16
     mov [rsp], r10
-    call putchar
+    call print_char
     mov rsp, [rsp] ; restore caller rsp after call
     push rax ; call result
     pop rax ; discard expr
-_print_uint64_end:
+_print_uint_end:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+
+
+
+
+global print_int
+print_int:
+    endbr64
+    push rbp
+    mov rbp, rsp
+    sub rsp, 16 ; function locals
+    mov qword [rbp-8], rdi ; function parameter num
+    push qword [rbp-8] ; num
+    push qword 0 ; int literal
+    pop rcx ; binary right
+    pop rax ; binary left
+    cmp rax, rcx
+    setl al
+    movzx rax, al
+    push rax ; binary result
+    pop rax ; if condition check
+    test rax, rax
+    jz _if_3_else
+    push qword 45 ; char literal
+    pop rdi ; call argument 0
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call print_char
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    pop rax ; discard expr
+    push qword 0 ; int literal
+    push qword [rbp-8] ; num
+    pop rcx ; binary right
+    pop rax ; binary left
+    sub rax, rcx
+    push rax ; binary result
+    pop rax ; cast source value
+    push rax ; cast result to Builtin(Uint64)
+    pop rdi ; call argument 0
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call print_uint
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    pop rax ; discard expr
+    jmp _if_3_end
+_if_3_else:
+    push qword [rbp-8] ; num
+    pop rax ; cast source value
+    push rax ; cast result to Builtin(Uint64)
+    pop rdi ; call argument 0
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call print_uint
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    pop rax ; discard expr
+_if_3_end:
+_print_int_end:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+
+
+
+
+global print_bool
+print_bool:
+    endbr64
+    push rbp
+    mov rbp, rsp
+    sub rsp, 16 ; function locals
+    mov byte [rbp-1], dil ; function parameter value
+    movzx rax, byte [rbp-1] ; value
+    push rax ; value
+    pop rax ; if condition check
+    test rax, rax
+    jz _if_4_end
+    push _str_5
+    pop rdi ; call argument 0
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call print_string
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    pop rax ; discard expr
+    jmp _print_bool_end ; return
+_if_4_end:
+    push _str_6
+    pop rdi ; call argument 0
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call print_string
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    pop rax ; discard expr
+_print_bool_end:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+
+
+
+
+global println
+println:
+    endbr64
+    push rbp
+    mov rbp, rsp
+    sub rsp, 16 ; function locals
+    mov qword [rbp-8], rdi ; function parameter str
+    push qword [rbp-8] ; str
+    pop rdi ; call argument 0
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call print_string
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    pop rax ; discard expr
+    push qword 10 ; char literal
+    pop rdi ; call argument 0
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call print_char
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    pop rax ; discard expr
+_println_end:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+
+
+
+
+global main
+main:
+    endbr64
+    push rbp
+    mov rbp, rsp
+    push _str_7
+    pop rdi ; call argument 0
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call print_string
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    pop rax ; discard expr
+    push qword 1 ; bool literal
+    pop rdi ; call argument 0
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call print_bool
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    pop rax ; discard expr
+    push _str_8
+    pop rdi ; call argument 0
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call println
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    pop rax ; discard expr
+    push qword 0 ; int literal
+    pop rax ; put ret value in rax
+    jmp _main_end ; return
+_main_end:
     mov rsp, rbp
     pop rbp
     ret
@@ -423,7 +423,8 @@ _print_uint64_end:
 
 
 section .rodata
-    _str_1 db "I love you vel", 0
-    _str_4 db "number ", 0
-    _str_5 db "your number is even", 0
+    _str_5 db "true", 0
+    _str_6 db "false", 0
+    _str_7 db "I love vel: ", 0
+    _str_8 db 0
 

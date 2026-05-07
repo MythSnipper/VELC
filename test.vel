@@ -1,64 +1,11 @@
+#include:stdlib.vel
 uint64 main() {
-    printline("I love you vel");
-    testing();
-
+    print_string("I love vel: ");
+    print_bool(true);
+    println("");
     return 0;
 }
 
-void testing() {
-    
-
-}
-
-
-
-
-
-uint64 strlen(string str) {
-    uint64 length = 0;
-    while((*(char*)str) != 0){
-        length++;
-        str = (string)((uint64)str + 1);
-    }
-    return length;
-}
-void putchar(char out) {
-    char* outptr = &out;
-    %{
-        mov rax, 1          ; syscall: write
-        mov rdi, 1          ; file descriptor: stdout
-        ; pointer to message in rsi
-        mov rdx, 1          ; message length
-        syscall
-    }$ in(outptr -> rsi)%
-}
-void print(string str) {
-    uint64 len = strlen(str);
-    %{
-        mov rax, 1          ; syscall: write
-        mov rdi, 1          ; file descriptor: stdout
-        ; pointer to message in rsi
-        ; message length in rdx
-        syscall
-    }$ in(str -> rsi, len -> rdx)%
-}
-void printline(string str) {
-    uint64 len = strlen(str);
-    %{
-        mov rax, 1          ; syscall: write
-        mov rdi, 1          ; file descriptor: stdout
-        ; pointer to message in rsi
-        ; message length in rdx
-        syscall
-    }$ in(str -> rsi, len -> rdx)%
-    putchar('\n');
-}
-void print_uint64(uint64 num) {
-    if (num >= 10) {
-        print_uint64(num / 10);
-    }
-    putchar((char)((num % 10) + '0'));
-}
 
 
 

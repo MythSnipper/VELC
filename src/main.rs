@@ -28,11 +28,13 @@ struct Compiler {
     do_execute: bool,
 
     //structures
+    preprocessor: preprocessor::Preprocessor,
     lexer: lexer::Lexer,
     parser: parser::Parser,
     analyzer: analyzer::Analyzer,
     codegen: codegen::CodeGenerator,
 
+    include_paths: Vec<String>,
     source_code: String,
     source_preprocessed: String,
     tokens: Vec<lexer::Token>,
@@ -55,11 +57,13 @@ impl Compiler {
             do_link: false,
             do_execute: false,
 
+            preprocessor: preprocessor::Preprocessor::new(),
             lexer: lexer::Lexer::new(),
             parser: parser::Parser::new(),
             analyzer: analyzer::Analyzer::new(),
             codegen: codegen::CodeGenerator::new(),
 
+            include_paths: vec![".".to_string()],
             source_code: String::new(),
             source_preprocessed: String::new(),
             tokens: Vec::new(),
@@ -78,6 +82,7 @@ Options:
   -E            Preprocess only
   -S            Compile only
   -c            Compile and assemble only
+  -I <path>     Add include path
   -o <file>     Place the output into <file>
   --run         Run the output file");
         let version_message: String = format!("velc version 1.0.0 
@@ -91,11 +96,16 @@ Options:
         let mut preprocess_only_flag: bool = false;
         let mut compile_only_flag: bool = false;
         let mut compile_assemble_only_flag: bool = false;
+        let mut add_include_path_flag: bool = false;
 
         for arg in &args {
             if output_filename_flag {
                 self.output_filename = arg.to_string();
                 output_filename_flag = false;
+            }
+            else if add_include_path_flag {
+                self.include_paths.push(arg.to_string());
+                add_include_path_flag = false;
             }
             else{
                 match arg.as_str() {
@@ -121,6 +131,9 @@ Options:
                     }
                     "-c" => {
                         compile_assemble_only_flag = true;
+                    }
+                    "-I" => {
+                        add_include_path_flag = true;
                     }
                     "-o" => {
                         output_filename_flag = true;
@@ -189,8 +202,12 @@ Options:
         
         //preprocess
         if self.do_preprocess {
-            self.source_preprocessed = preprocessor::run(&self.source_code)?;
+            self.preprocessor = preprocessor::Preprocessor::new();
+            self.source_preprocessed = self.preprocessor.run(&self.input_filename, &self.include_paths)?;
         }
+
+        fs::write(&format!("{}.vell", self.temp_filename_root), &self.source_preprocessed)
+        .map_err(|e| format!("velc:IO:write: {}", e))?;
 
         //compile
         if self.do_compile {

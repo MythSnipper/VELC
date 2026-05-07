@@ -1,0 +1,28 @@
+{
+  "name": "vel-syntax",
+  "displayName": "VEL Syntax Highlighting",
+  "description": "Syntax highlighting for the VEL programming language",
+  "version": "0.0.1",
+  "publisher": "mythsnipper",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "vel",
+        "aliases": ["VEL", "vel"],
+        "extensions": [".vel"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "vel",
+        "scopeName": "source.vel",
+        "path": "./syntaxes/vel.tmLanguage.json"
+      }
+    ]
+  }
+}

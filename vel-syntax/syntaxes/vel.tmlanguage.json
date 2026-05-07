@@ -1,0 +1,179 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "VEL",
+  "scopeName": "source.vel",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#preprocessor"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#chars"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#inline_asm"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.vel",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.vel",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+
+    "preprocessor": {
+      "patterns": [
+        {
+          "name": "meta.preprocessor.vel",
+          "match": "^\\s*#.*$"
+        }
+      ]
+    },
+
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.vel",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.vel",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+
+    "chars": {
+      "patterns": [
+        {
+          "name": "string.quoted.single.vel",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.vel",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.vel",
+          "match": "\\b0x[0-9a-fA-F]+\\b"
+        },
+        {
+          "name": "constant.numeric.binary.vel",
+          "match": "\\b0b[01]+\\b"
+        },
+        {
+          "name": "constant.numeric.float.vel",
+          "match": "\\b[0-9]+\\.[0-9]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.vel",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.vel",
+          "match": "\\b(if|else|while|for|return|break|continue)\\b"
+        },
+        {
+          "name": "constant.language.vel",
+          "match": "\\b(true|false|null)\\b"
+        }
+      ]
+    },
+
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.vel",
+          "match": "\\b(bool|char|string|void|int8|int16|int32|int64|uint8|uint16|uint32|uint64|float32|float64)\\b"
+        }
+      ]
+    },
+
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.vel",
+          "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()"
+        }
+      ]
+    },
+
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.vel",
+          "match": "(==|!=|<=|>=|&&|\\|\\||\\^\\^|<<|>>|\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|<<=|>>=|\\+\\+|--|[+\\-*/%<>=!~&|^])"
+        }
+      ]
+    },
+
+    "inline_asm": {
+      "patterns": [
+        {
+          "name": "meta.inline-assembly.vel",
+          "begin": "%\\{",
+          "end": "\\}%"
+        },
+        {
+          "name": "meta.inline-assembly.vel",
+          "begin": "%\\{",
+          "end": "\\}\\$",
+          "patterns": [
+            {
+              "name": "source.asm.x86_64",
+              "match": ".*"
+            }
+          ]
+        },
+        {
+          "name": "keyword.other.asm-binding.vel",
+          "match": "\\b(in|out)\\b"
+        }
+      ]
+    }
+  }
+}
