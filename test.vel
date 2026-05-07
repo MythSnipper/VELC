@@ -1,8 +1,10 @@
 #include:stdlib.vel
 uint64 main() {
-    print_string("I love vel: ");
-    print_bool(true);
-    println("");
+    string man = "hiiiiiiiiiiiiiiiiiiii ywesan  quween UYEAAAHG OMG HWGHUIOWRHTHWEIOERHAITOHDROTHOEH SMASH WEJOTUOWERJTOPUWEORPUTOEROTEROTU OIUOIDSFIDOEWR";
+    for(int32 i = 0; i < strlen(man); i++) {
+        print_char(*(char*)((uint64)man + i));
+        println("");
+    }
     return 0;
 }
 

@@ -8,7 +8,6 @@ uint64 strlen(string str) {
     return length;
 }
 
-
 //print functions
 void print_char(char out) {
     char* outptr = &out;
@@ -20,7 +19,8 @@ void print_char(char out) {
         syscall
     }$ in(outptr -> rsi)%
 }
-void print_string(string str) {
+
+void print_str(string str) {
     uint64 len = strlen(str);
     %{
         mov rax, 1          ; syscall: write
@@ -30,12 +30,14 @@ void print_string(string str) {
         syscall
     }$ in(str -> rsi, len -> rdx)%
 }
+
 void print_uint(uint64 num) {
     if (num >= 10) {
         print_uint(num / 10);
     }
     print_char((char)((num % 10) + '0'));
 }
+
 void print_int(int64 num) {
     if (num < 0) {
         print_char('-');
@@ -48,34 +50,33 @@ void print_int(int64 num) {
 
 void print_bool(bool value) {
     if(value) {
-        print_string("true");
+        print_str("true");
         return;
     }
-    print_string("false");
+    print_str("false");
 }
 
 void println(string str) {
-    print_string(str);
+    print_str(str);
     print_char('\n');
 }
 
 void __print_hex_digit(uint64 digit) {
-    if (digit < 10) {
-        putchar((char)(digit + '0'));
-    } else {
-        putchar((char)((digit - 10) + 'a'));
+    if(digit < 10) {
+        print_char((char)(digit + '0'));
+    }
+    else {
+        print_char((char)((digit - 10) + 'a'));
     }
 }
-
 void __print_hex_uint64_inner(uint64 value) {
-    if (value >= 16) {
-        print_hex_uint64_inner(value / 16);
+    if(value >= 16) {
+        __print_hex_uint64_inner(value / 16);
     }
-
-    print_hex_digit(value % 16);
+    __print_hex_digit(value % 16);
 }
 
-void print_hex_uint64(uint64 value) {
-    print_string("0x");
-    print_hex_uint64_inner(value);
+void print_hex(uint64 value) {
+    print_str("0x");
+    __print_hex_uint64_inner(value);
 }
