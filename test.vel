@@ -1,11 +1,18 @@
-
 uint64 main() {
-    uint64 len = strlen("meow");
-    for(int32 i=0;i<200000;i++){
-        printlnlen("meow", len);
-    }
+    printline("I love you vel");
+    testing();
+
     return 0;
 }
+
+void testing() {
+    
+
+}
+
+
+
+
 
 uint64 strlen(string str) {
     uint64 length = 0;
@@ -25,7 +32,7 @@ void putchar(char out) {
         syscall
     }$ in(outptr -> rsi)%
 }
-void println(string str) {
+void print(string str) {
     uint64 len = strlen(str);
     %{
         mov rax, 1          ; syscall: write
@@ -34,9 +41,9 @@ void println(string str) {
         ; message length in rdx
         syscall
     }$ in(str -> rsi, len -> rdx)%
-    putchar('\n');
 }
-void printlnlen(string str, uint64 len) {
+void printline(string str) {
+    uint64 len = strlen(str);
     %{
         mov rax, 1          ; syscall: write
         mov rdi, 1          ; file descriptor: stdout
