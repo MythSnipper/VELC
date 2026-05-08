@@ -1,16 +1,12 @@
 #include:stdlib.vel
 
 uint64 main() {
-    srand((uint64)"i love vel");
-
-    uint64 sum = 0;
 
     for(int32 i = 0; i < 20; i++) {
-        uint64 randnum = rand_range(1, 10);
-        print_uint(randnum);
+        string t = "        ";
+        sys_read(0, &t, 8);
+        print_str(t);
         println("");
-
-        sum += randnum;
     }
 
     return 0;

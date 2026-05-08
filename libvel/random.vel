@@ -1,18 +1,31 @@
-uint64 __random_rand_state = 67676767676767;
+#include:sys.vel
 
+uint64 __random_rand_state = 67676767;
+
+//seed the pseudo-random number generator
 void srand(uint64 seed) {
     if(seed == 0) {
-        seed = 67676767676767;
+        seed = 67676767;
     }
 
     __random_rand_state = seed;
 
-    for(int32 i=0;i<100;i++) {
-        rand();
+    for(int32 i=0;i<10;i++) {
+        rand64();
     }
 }
 
-uint64 rand() {
+//seed the pseudo-random number generator using rdrand
+void srand_hw() {
+    __random_rand_state = cpu_rdrand();
+
+    for(int32 i=0;i<10;i++) {
+        rand64();
+    }
+}
+
+//returns a random 64 bit number
+uint64 rand64() {
     uint64 x = __random_rand_state;
 
     x ^= x << 13;
@@ -24,9 +37,16 @@ uint64 rand() {
     return x;
 }
 
-//inclusive to both ends
+//generates a random number in [min, max]
 uint64 rand_range(uint64 min, uint64 max) {
     uint64 diff = max - min + 1;
-    uint64 result = rand() % diff + min;
+    uint64 result = rand64() % diff + min;
     return result;
 }
+
+
+
+
+
+
+

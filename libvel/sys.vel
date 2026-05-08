@@ -1,0 +1,47 @@
+
+
+
+void sys_read(uint64 fd, char* buf, uint64 count) {
+    %{
+        mov rax, 0 ; syscall: read
+        syscall
+    }$ in(fd -> rdi, buf -> rsi, count -> rdx)%
+}
+
+void sys_write(uint64 fd, char* buf, uint64 count) {
+    %{
+        mov rax, 1 ; syscall: write
+        syscall
+    }$ in(fd -> rdi, buf -> rsi, count -> rdx)%
+}
+
+void sys_exit(uint64 exit_code) {
+    %{
+        mov rax, 0x3c
+        syscall
+    }$ in(exit_code -> rdi)%
+}
+
+
+
+
+
+uint64 cpu_rdseed() {
+    uint64 a = 0;
+    %{
+        xor rax, rax
+        rdseed rax
+    }$ out(rax -> a)%
+
+    return a;
+}
+
+uint64 cpu_rdrand() {
+    uint64 a = 0;
+    %{
+        xor rax, rax
+        rdrand rax
+    }$ out(rax -> a)%
+
+    return a;
+}
