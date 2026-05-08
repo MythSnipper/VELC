@@ -61,7 +61,7 @@ void println(string str) {
     print_char('\n');
 }
 
-void __print_hex_digit(uint64 digit) {
+void __io_print_hex_digit(uint64 digit) {
     if(digit < 10) {
         print_char((char)(digit + '0'));
     }
@@ -69,47 +69,77 @@ void __print_hex_digit(uint64 digit) {
         print_char((char)((digit - 10) + 'a'));
     }
 }
-void __print_hex_uint64_inner(uint64 value) {
+void __io_print_hex_uint64_inner(uint64 value) {
     if(value >= 16) {
-        __print_hex_uint64_inner(value / 16);
+        __io_print_hex_uint64_inner(value / 16);
     }
-    __print_hex_digit(value % 16);
+    __io_print_hex_digit(value % 16);
 }
 
 void print_hex(uint64 value) {
     print_str("0x");
-    __print_hex_uint64_inner(value);
+    __io_print_hex_uint64_inner(value);
 }
+uint64 __random_rand_state = 67676767676767;
 
-uint64 main() {
-    
-    for(int32 i = 0; i < 10; i++) {
-        uint64 randnum = rand();
-        print_uint(randnum);
-        println("");
+void srand(uint64 seed) {
+    if(seed == 0) {
+        seed = 67676767676767;
     }
-    return 0;
+
+    __random_rand_state = seed;
+
+    for(int32 i=0;i<100;i++) {
+        rand();
+    }
 }
 
 uint64 rand() {
-    uint64 a = 0;
+    uint64 x = __random_rand_state;
 
-    %{
-        mov rcx, 100
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
 
-_rand_rdseed_retry:
-        rdseed rax
-        jc _rand_rdseed_done
+    __random_rand_state = x;
 
-        dec rcx
-        jnz _rand_rdseed_retry
-
-        mov rax, 0
-
-_rand_rdseed_done:
-    }$ out(rax -> a)%
-
-    return a;
+    return x;
 }
+
+//inclusive to both ends
+uint64 rand_range(uint64 min, uint64 max) {
+    uint64 diff = max - min + 1;
+    uint64 result = rand() % diff + min;
+    return result;
+}
+
+uint64 main() {
+    srand((uint64)"i love vel");
+
+    uint64 sum = 0;
+
+    for(int32 i = 0; i < 20; i++) {
+        uint64 randnum = rand_range(1, 10);
+        print_uint(randnum);
+        println("");
+
+        sum += randnum;
+    }
+
+    return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

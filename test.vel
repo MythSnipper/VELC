@@ -1,33 +1,32 @@
 #include:stdlib.vel
+
 uint64 main() {
-    
-    for(int32 i = 0; i < 10; i++) {
-        uint64 randnum = rand();
+    srand((uint64)"i love vel");
+
+    uint64 sum = 0;
+
+    for(int32 i = 0; i < 20; i++) {
+        uint64 randnum = rand_range(1, 10);
         print_uint(randnum);
         println("");
+
+        sum += randnum;
     }
+
     return 0;
 }
 
-uint64 rand() {
-    uint64 a = 0;
 
-    %{
-        mov rcx, 100
 
-_rand_rdseed_retry:
-        rdseed rax
-        jc _rand_rdseed_done
 
-        dec rcx
-        jnz _rand_rdseed_retry
 
-        mov rax, 0
 
-_rand_rdseed_done:
-    }$ out(rax -> a)%
 
-    return a;
-}
+
+
+
+
+
+
 
 

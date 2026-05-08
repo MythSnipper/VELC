@@ -61,7 +61,7 @@ void println(string str) {
     print_char('\n');
 }
 
-void __print_hex_digit(uint64 digit) {
+void __io_print_hex_digit(uint64 digit) {
     if(digit < 10) {
         print_char((char)(digit + '0'));
     }
@@ -69,14 +69,14 @@ void __print_hex_digit(uint64 digit) {
         print_char((char)((digit - 10) + 'a'));
     }
 }
-void __print_hex_uint64_inner(uint64 value) {
+void __io_print_hex_uint64_inner(uint64 value) {
     if(value >= 16) {
-        __print_hex_uint64_inner(value / 16);
+        __io_print_hex_uint64_inner(value / 16);
     }
-    __print_hex_digit(value % 16);
+    __io_print_hex_digit(value % 16);
 }
 
 void print_hex(uint64 value) {
     print_str("0x");
-    __print_hex_uint64_inner(value);
+    __io_print_hex_uint64_inner(value);
 }

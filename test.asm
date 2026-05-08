@@ -374,8 +374,8 @@ _println_end:
 
 
 
-global __print_hex_digit
-__print_hex_digit:
+global __io_print_hex_digit
+__io_print_hex_digit:
     endbr64
     push rbp
     mov rbp, rsp
@@ -436,7 +436,7 @@ _if_7_else:
     push rax ; call result
     pop rax ; discard expr
 _if_7_end:
-___print_hex_digit_end:
+___io_print_hex_digit_end:
     mov rsp, rbp
     pop rbp
     ret
@@ -445,8 +445,8 @@ ___print_hex_digit_end:
 
 
 
-global __print_hex_uint64_inner
-__print_hex_uint64_inner:
+global __io_print_hex_uint64_inner
+__io_print_hex_uint64_inner:
     endbr64
     push rbp
     mov rbp, rsp
@@ -475,7 +475,7 @@ __print_hex_uint64_inner:
     and rsp, -16
     sub rsp, 16
     mov [rsp], r10
-    call __print_hex_uint64_inner
+    call __io_print_hex_uint64_inner
     mov rsp, [rsp] ; restore caller rsp after call
     push rax ; call result
     pop rax ; discard expr
@@ -493,11 +493,11 @@ _if_8_end:
     and rsp, -16
     sub rsp, 16
     mov [rsp], r10
-    call __print_hex_digit
+    call __io_print_hex_digit
     mov rsp, [rsp] ; restore caller rsp after call
     push rax ; call result
     pop rax ; discard expr
-___print_hex_uint64_inner_end:
+___io_print_hex_uint64_inner_end:
     mov rsp, rbp
     pop rbp
     ret
@@ -529,7 +529,7 @@ print_hex:
     and rsp, -16
     sub rsp, 16
     mov [rsp], r10
-    call __print_hex_uint64_inner
+    call __io_print_hex_uint64_inner
     mov rsp, [rsp] ; restore caller rsp after call
     push rax ; call result
     pop rax ; discard expr
@@ -542,19 +542,48 @@ _print_hex_end:
 
 
 
-global main
-main:
+global srand
+srand:
     endbr64
     push rbp
     mov rbp, rsp
     sub rsp, 16 ; function locals
+    mov qword [rbp-8], rdi ; function parameter seed
+    push qword [rbp-8] ; seed
+    push qword 0 ; int literal
+    pop rcx ; binary right
+    pop rax ; binary left
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    push rax ; binary result
+    pop rax ; if condition check
+    test rax, rax
+    jz _if_10_end
+    lea rax, [rbp-8] ; &seed
+    push rax ; assignment destination address
+    push qword 67676767676767 ; int literal
+    pop rax ; assignment value
+    pop rcx ; assignment destination address
+    mov qword [rcx], rax
+    push rax ; assignment result
+    pop rax ; discard expr
+_if_10_end:
+    lea rax, [__random_rand_state] ; &__random_rand_state
+    push rax ; assignment destination address
+    push qword [rbp-8] ; seed
+    pop rax ; assignment value
+    pop rcx ; assignment destination address
+    mov qword [rcx], rax
+    push rax ; assignment result
+    pop rax ; discard expr
     push qword 0 ; int literal
     pop rax ; extract initializer expr
-    mov dword [rbp-4], eax ; i
-_for_10_start:
-    movsx rax, dword [rbp-4] ; i
+    mov dword [rbp-12], eax ; i
+_for_11_start:
+    movsx rax, dword [rbp-12] ; i
     push rax ; i
-    push qword 10 ; int literal
+    push qword 100 ; int literal
     pop rcx ; binary right
     pop rax ; binary left
     cmp rax, rcx
@@ -564,7 +593,7 @@ _for_10_start:
 
     pop rax
     test rax, rax
-    jz _for_10_end
+    jz _for_11_end
     mov r10, rsp ; save caller rsp before call
     and rsp, -16
     sub rsp, 16
@@ -572,42 +601,18 @@ _for_10_start:
     call rand
     mov rsp, [rsp] ; restore caller rsp after call
     push rax ; call result
-    pop rax ; extract initializer expr
-    mov qword [rbp-12], rax ; randnum
-    push qword [rbp-12] ; randnum
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call print_uint
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
     pop rax ; discard expr
-    push _str_11
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call println
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; discard expr
-_for_10_step:
-    lea rax, [rbp-4] ; &i
+_for_11_step:
+    lea rax, [rbp-12] ; &i
     mov rcx, rax ; postfix address
     movsxd rax, dword [rcx]
     push rax ; postfix old value
     inc rax
     mov dword [rcx], eax
     pop rax
-    jmp _for_10_start
-_for_10_end:
-    push qword 0 ; int literal
-    pop rax ; put ret value in rax
-    jmp _main_end ; return
-_main_end:
+    jmp _for_11_start
+_for_11_end:
+_srand_end:
     mov rsp, rbp
     pop rbp
     ret
@@ -622,26 +627,72 @@ rand:
     push rbp
     mov rbp, rsp
     sub rsp, 16 ; function locals
-    push qword 0 ; int literal
+    push qword [__random_rand_state] ; __random_rand_state
     pop rax ; extract initializer expr
-    mov qword [rbp-8], rax ; a
-;assembly start
-
-        mov rcx, 100
-
-_rand_rdseed_retry:
-        rdseed rax
-        jc _rand_rdseed_done
-
-        dec rcx
-        jnz _rand_rdseed_retry
-
-        mov rax, 0
-
-_rand_rdseed_done:
-        mov qword [rbp-8], rax ; asm output a
-;assembly end
-    push qword [rbp-8] ; a
+    mov qword [rbp-8], rax ; x
+    lea rax, [rbp-8] ; &x
+    push rax ; compound assignment destination address
+    mov rcx, rax ; load compound left value
+    mov rax, qword [rcx]
+    push rax ; compound assignment left value
+    push qword [rbp-8] ; x
+    push qword 13 ; int literal
+    pop rcx ; binary right
+    pop rax ; binary left
+    shl rax, cl
+    push rax ; binary result
+    pop r10 ; compound assignment right value
+    pop rax ; compound assignment left value
+    pop rcx ; compound assignment destination address
+    xor rax, r10
+    mov qword [rcx], rax
+    push rax ; compound assignment result
+    pop rax ; discard expr
+    lea rax, [rbp-8] ; &x
+    push rax ; compound assignment destination address
+    mov rcx, rax ; load compound left value
+    mov rax, qword [rcx]
+    push rax ; compound assignment left value
+    push qword [rbp-8] ; x
+    push qword 7 ; int literal
+    pop rcx ; binary right
+    pop rax ; binary left
+    shr rax, cl
+    push rax ; binary result
+    pop r10 ; compound assignment right value
+    pop rax ; compound assignment left value
+    pop rcx ; compound assignment destination address
+    xor rax, r10
+    mov qword [rcx], rax
+    push rax ; compound assignment result
+    pop rax ; discard expr
+    lea rax, [rbp-8] ; &x
+    push rax ; compound assignment destination address
+    mov rcx, rax ; load compound left value
+    mov rax, qword [rcx]
+    push rax ; compound assignment left value
+    push qword [rbp-8] ; x
+    push qword 17 ; int literal
+    pop rcx ; binary right
+    pop rax ; binary left
+    shl rax, cl
+    push rax ; binary result
+    pop r10 ; compound assignment right value
+    pop rax ; compound assignment left value
+    pop rcx ; compound assignment destination address
+    xor rax, r10
+    mov qword [rcx], rax
+    push rax ; compound assignment result
+    pop rax ; discard expr
+    lea rax, [__random_rand_state] ; &__random_rand_state
+    push rax ; assignment destination address
+    push qword [rbp-8] ; x
+    pop rax ; assignment value
+    pop rcx ; assignment destination address
+    mov qword [rcx], rax
+    push rax ; assignment result
+    pop rax ; discard expr
+    push qword [rbp-8] ; x
     pop rax ; put ret value in rax
     jmp _rand_end ; return
 _rand_end:
@@ -653,10 +704,174 @@ _rand_end:
 
 
 
+global rand_range
+rand_range:
+    endbr64
+    push rbp
+    mov rbp, rsp
+    sub rsp, 32 ; function locals
+    mov qword [rbp-8], rdi ; function parameter min
+    mov qword [rbp-16], rsi ; function parameter max
+    push qword [rbp-16] ; max
+    push qword [rbp-8] ; min
+    pop rcx ; binary right
+    pop rax ; binary left
+    sub rax, rcx
+    push rax ; binary result
+    push qword 1 ; int literal
+    pop rcx ; binary right
+    pop rax ; binary left
+    add rax, rcx
+    push rax ; binary result
+    pop rax ; extract initializer expr
+    mov qword [rbp-24], rax ; diff
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call rand
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    push qword [rbp-24] ; diff
+    pop rcx ; binary right
+    pop rax ; binary left
+    xor rdx, rdx
+    div rcx
+    mov rax, rdx
+    push rax ; binary result
+    push qword [rbp-8] ; min
+    pop rcx ; binary right
+    pop rax ; binary left
+    add rax, rcx
+    push rax ; binary result
+    pop rax ; extract initializer expr
+    mov qword [rbp-32], rax ; result
+    push qword [rbp-32] ; result
+    pop rax ; put ret value in rax
+    jmp _rand_range_end ; return
+_rand_range_end:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+
+
+
+
+global main
+main:
+    endbr64
+    push rbp
+    mov rbp, rsp
+    sub rsp, 32 ; function locals
+    push _str_12
+    pop rax ; cast source value
+    push rax ; cast result to Builtin(Uint64)
+    pop rdi ; call argument 0
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call srand
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    pop rax ; discard expr
+    push qword 0 ; int literal
+    pop rax ; extract initializer expr
+    mov qword [rbp-8], rax ; sum
+    push qword 0 ; int literal
+    pop rax ; extract initializer expr
+    mov dword [rbp-12], eax ; i
+_for_13_start:
+    movsx rax, dword [rbp-12] ; i
+    push rax ; i
+    push qword 20 ; int literal
+    pop rcx ; binary right
+    pop rax ; binary left
+    cmp rax, rcx
+    setl al
+    movzx rax, al
+    push rax ; binary result
+
+    pop rax
+    test rax, rax
+    jz _for_13_end
+    push qword 1 ; int literal
+    push qword 10 ; int literal
+    pop rsi ; call argument 1
+    pop rdi ; call argument 0
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call rand_range
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    pop rax ; extract initializer expr
+    mov qword [rbp-20], rax ; randnum
+    push qword [rbp-20] ; randnum
+    pop rdi ; call argument 0
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call print_uint
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    pop rax ; discard expr
+    push _str_14
+    pop rdi ; call argument 0
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call println
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    pop rax ; discard expr
+    lea rax, [rbp-8] ; &sum
+    push rax ; compound assignment destination address
+    mov rcx, rax ; load compound left value
+    mov rax, qword [rcx]
+    push rax ; compound assignment left value
+    push qword [rbp-20] ; randnum
+    pop r10 ; compound assignment right value
+    pop rax ; compound assignment left value
+    pop rcx ; compound assignment destination address
+    add rax, r10
+    mov qword [rcx], rax
+    push rax ; compound assignment result
+    pop rax ; discard expr
+_for_13_step:
+    lea rax, [rbp-12] ; &i
+    mov rcx, rax ; postfix address
+    movsxd rax, dword [rcx]
+    push rax ; postfix old value
+    inc rax
+    mov dword [rcx], eax
+    pop rax
+    jmp _for_13_start
+_for_13_end:
+    push qword 0 ; int literal
+    pop rax ; put ret value in rax
+    jmp _main_end ; return
+_main_end:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+
+
+
+
+
+section .data
+    __random_rand_state dq 67676767676767
 
 section .rodata
     _str_5 db "true", 0
     _str_6 db "false", 0
     _str_9 db "0x", 0
-    _str_11 db 0
+    _str_12 db "i love vel", 0
+    _str_14 db 0
 
