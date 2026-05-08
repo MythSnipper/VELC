@@ -1,13 +1,33 @@
 #include:stdlib.vel
 uint64 main() {
-    string man = "hiiiiiiiiiiiiiiiiiiii ywesan  quween UYEAAAHG OMG HWGHUIOWRHTHWEIOERHAITOHDROTHOEH SMASH WEJOTUOWERJTOPUWEORPUTOEROTEROTU OIUOIDSFIDOEWR";
-    for(int32 i = 0; i < strlen(man); i++) {
-        print_char(*(char*)((uint64)man + i));
+    
+    for(int32 i = 0; i < 10; i++) {
+        uint64 randnum = rand();
+        print_uint(randnum);
         println("");
     }
     return 0;
 }
 
+uint64 rand() {
+    uint64 a = 0;
 
+    %{
+        mov rcx, 100
+
+_rand_rdseed_retry:
+        rdseed rax
+        jc _rand_rdseed_done
+
+        dec rcx
+        jnz _rand_rdseed_retry
+
+        mov rax, 0
+
+_rand_rdseed_done:
+    }$ out(rax -> a)%
+
+    return a;
+}
 
 

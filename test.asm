@@ -548,24 +548,13 @@ main:
     push rbp
     mov rbp, rsp
     sub rsp, 16 ; function locals
-    push _str_10
-    pop rax ; extract initializer expr
-    mov qword [rbp-8], rax ; man
     push qword 0 ; int literal
     pop rax ; extract initializer expr
-    mov dword [rbp-12], eax ; i
-_for_11_start:
-    movsx rax, dword [rbp-12] ; i
+    mov dword [rbp-4], eax ; i
+_for_10_start:
+    movsx rax, dword [rbp-4] ; i
     push rax ; i
-    push qword [rbp-8] ; man
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call strlen
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
+    push qword 10 ; int literal
     pop rcx ; binary right
     pop rax ; binary left
     cmp rax, rcx
@@ -575,31 +564,27 @@ _for_11_start:
 
     pop rax
     test rax, rax
-    jz _for_11_end
-    push qword [rbp-8] ; man
-    pop rax ; cast source value
-    push rax ; cast result to Builtin(Uint64)
-    movsx rax, dword [rbp-12] ; i
-    push rax ; i
-    pop rcx ; binary right
-    pop rax ; binary left
-    add rax, rcx
-    push rax ; binary result
-    pop rax ; cast source value
-    push rax ; cast result to Pointer(Builtin(Char))
-    pop rax
-    movsx rax, byte [rax]
-    push rax
+    jz _for_10_end
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call rand
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    pop rax ; extract initializer expr
+    mov qword [rbp-12], rax ; randnum
+    push qword [rbp-12] ; randnum
     pop rdi ; call argument 0
     mov r10, rsp ; save caller rsp before call
     and rsp, -16
     sub rsp, 16
     mov [rsp], r10
-    call print_char
+    call print_uint
     mov rsp, [rsp] ; restore caller rsp after call
     push rax ; call result
     pop rax ; discard expr
-    push _str_12
+    push _str_11
     pop rdi ; call argument 0
     mov r10, rsp ; save caller rsp before call
     and rsp, -16
@@ -609,20 +594,57 @@ _for_11_start:
     mov rsp, [rsp] ; restore caller rsp after call
     push rax ; call result
     pop rax ; discard expr
-_for_11_step:
-    lea rax, [rbp-12] ; &i
+_for_10_step:
+    lea rax, [rbp-4] ; &i
     mov rcx, rax ; postfix address
     movsxd rax, dword [rcx]
     push rax ; postfix old value
     inc rax
     mov dword [rcx], eax
     pop rax
-    jmp _for_11_start
-_for_11_end:
+    jmp _for_10_start
+_for_10_end:
     push qword 0 ; int literal
     pop rax ; put ret value in rax
     jmp _main_end ; return
 _main_end:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+
+
+
+
+global rand
+rand:
+    endbr64
+    push rbp
+    mov rbp, rsp
+    sub rsp, 16 ; function locals
+    push qword 0 ; int literal
+    pop rax ; extract initializer expr
+    mov qword [rbp-8], rax ; a
+;assembly start
+
+        mov rcx, 100
+
+_rand_rdseed_retry:
+        rdseed rax
+        jc _rand_rdseed_done
+
+        dec rcx
+        jnz _rand_rdseed_retry
+
+        mov rax, 0
+
+_rand_rdseed_done:
+        mov qword [rbp-8], rax ; asm output a
+;assembly end
+    push qword [rbp-8] ; a
+    pop rax ; put ret value in rax
+    jmp _rand_end ; return
+_rand_end:
     mov rsp, rbp
     pop rbp
     ret
@@ -636,6 +658,5 @@ section .rodata
     _str_5 db "true", 0
     _str_6 db "false", 0
     _str_9 db "0x", 0
-    _str_10 db "hiiiiiiiiiiiiiiiiiiii ywesan  quween UYEAAAHG OMG HWGHUIOWRHTHWEIOERHAITOHDROTHOEH SMASH WEJOTUOWERJTOPUWEORPUTOEROTEROTU OIUOIDSFIDOEWR", 0
-    _str_12 db 0
+    _str_11 db 0
 
