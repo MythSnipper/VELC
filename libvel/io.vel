@@ -1,3 +1,4 @@
+#once
 #include:sys.vel
 
 uint64 strlen(string str) {

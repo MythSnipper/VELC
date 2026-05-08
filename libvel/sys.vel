@@ -1,4 +1,4 @@
-
+#once
 
 
 void sys_read(uint64 fd, char* buf, uint64 count) {

@@ -1,4 +1,53 @@
 
+
+
+
+
+void sys_read(uint64 fd, char* buf, uint64 count) {
+    %{
+        mov rax, 0 ; syscall: read
+        syscall
+    }$ in(fd -> rdi, buf -> rsi, count -> rdx)%
+}
+
+void sys_write(uint64 fd, char* buf, uint64 count) {
+    %{
+        mov rax, 1 ; syscall: write
+        syscall
+    }$ in(fd -> rdi, buf -> rsi, count -> rdx)%
+}
+
+void sys_exit(uint64 exit_code) {
+    %{
+        mov rax, 0x3c
+        syscall
+    }$ in(exit_code -> rdi)%
+}
+
+
+
+
+
+uint64 cpu_rdseed() {
+    uint64 a = 0;
+    %{
+        xor rax, rax
+        rdseed rax
+    }$ out(rax -> a)%
+
+    return a;
+}
+
+uint64 cpu_rdrand() {
+    uint64 a = 0;
+    %{
+        xor rax, rax
+        rdrand rax
+    }$ out(rax -> a)%
+
+    return a;
+}
+
 uint64 strlen(string str) {
     uint64 length = 0;
     while((*(char*)str) != 0){
@@ -14,14 +63,7 @@ void print_char(char out) {
 }
 
 void print_str(string str) {
-    uint64 len = strlen(str);
-    %{
-        mov rax, 1          ; syscall: write
-        mov rdi, 1          ; file descriptor: stdout
-        ; pointer to message in rsi
-        ; message length in rdx
-        syscall
-    }$ in(str -> rsi, len -> rdx)%
+    sys_write(1, &str, strlen(str)); //write string to stdout
 }
 
 void print_uint64(uint64 num) {
@@ -55,6 +97,11 @@ void println(string str) {
     print_char('\n');
 }
 
+
+
+
+
+
 void __io_print_hex_digit(uint64 digit) {
     if(digit < 10) {
         print_char((char)(digit + '0'));
@@ -75,41 +122,7 @@ void print_hex(uint64 value) {
     __io_print_hex_uint64_inner(value);
 }
 
-void sys_exit(uint64 exit_code) {
-    %{
-        mov rax, 0x3c
-        syscall
-    }$ in(exit_code -> rdi)%
-}
 
-void sys_write(uint64 fd, char* buf, uint64 count) {
-    %{
-        mov rax, 1          ; syscall: write
-        syscall
-    }$ in(fd -> rdi, buf -> rsi, count -> rdx)%
-}
-
-
-
-
-
-uint64 cpu_rdseed() {
-    uint64 a = 0;
-    %{
-        rdseed rax
-    }$ out(rax -> a)%
-
-    return a;
-}
-
-uint64 cpu_rdrand() {
-    uint64 a = 0;
-    %{
-        rdrand rax
-    }$ out(rax -> a)%
-
-    return a;
-}
 
 uint64 __random_rand_state = 67676767;
 
@@ -163,29 +176,9 @@ uint64 rand_range(uint64 min, uint64 max) {
 
 
 uint64 main() {
-    srand_hw();
-
-    for(int32 i = 0; i < 20; i++) {
-        uint64 randnum = rand_range(1, 100);
-        print_uint64(randnum);
-        println("");
-
-    }
-
+    println("I love vel")
     return 0;
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

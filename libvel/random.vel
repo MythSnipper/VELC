@@ -1,3 +1,4 @@
+#once
 #include:sys.vel
 
 uint64 __random_rand_state = 67676767;
