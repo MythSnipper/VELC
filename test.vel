@@ -1,7 +1,7 @@
 #include:stdlib.vel
 
 uint64 main() {
-    println("I love vel");
+    println("hello world");
     return 0;
 }
 

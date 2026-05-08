@@ -1,5 +1,6 @@
 #once
 #include:sys.vel
+#include:string.vel
 
 //print functions
 void print_char(char out) {
@@ -11,7 +12,7 @@ void print(string str) {
 }
 
 void println(string str) {
-    print_str(str);
+    print(str);
     print_char('\n');
 }
 
@@ -34,10 +35,10 @@ void print_int64(int64 num) {
 
 void print_bool(bool value) {
     if(value) {
-        print_str("true");
+        print("true");
     }
     else {
-        print_str("false");
+        print("false");
     }
 }
 

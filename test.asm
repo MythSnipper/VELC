@@ -23,6 +23,137 @@ _start:
 
 
 
+global sys_read
+sys_read:
+    endbr64
+    push rbp
+    mov rbp, rsp
+    sub rsp, 32 ; function locals
+    mov qword [rbp-8], rdi ; function parameter fd
+    mov qword [rbp-16], rsi ; function parameter buf
+    mov qword [rbp-24], rdx ; function parameter count
+;assembly start
+    mov rdi, qword [rbp-8] ; asm input fd
+    mov rsi, qword [rbp-16] ; asm input buf
+    mov rdx, qword [rbp-24] ; asm input count
+
+        mov rax, 0 ; syscall: read
+        syscall
+    
+;assembly end
+_sys_read_end:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+
+
+
+
+global sys_write
+sys_write:
+    endbr64
+    push rbp
+    mov rbp, rsp
+    sub rsp, 32 ; function locals
+    mov qword [rbp-8], rdi ; function parameter fd
+    mov qword [rbp-16], rsi ; function parameter buf
+    mov qword [rbp-24], rdx ; function parameter count
+;assembly start
+    mov rdi, qword [rbp-8] ; asm input fd
+    mov rsi, qword [rbp-16] ; asm input buf
+    mov rdx, qword [rbp-24] ; asm input count
+
+        mov rax, 1 ; syscall: write
+        syscall
+    
+;assembly end
+_sys_write_end:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+
+
+
+
+global sys_exit
+sys_exit:
+    endbr64
+    push rbp
+    mov rbp, rsp
+    sub rsp, 16 ; function locals
+    mov qword [rbp-8], rdi ; function parameter exit_code
+;assembly start
+    mov rdi, qword [rbp-8] ; asm input exit_code
+
+        mov rax, 0x3c
+        syscall
+    
+;assembly end
+_sys_exit_end:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+
+
+
+
+global cpu_rdseed
+cpu_rdseed:
+    endbr64
+    push rbp
+    mov rbp, rsp
+    sub rsp, 16 ; function locals
+    push qword 0 ; int literal
+    pop rax ; extract initializer expr
+    mov qword [rbp-8], rax ; a
+;assembly start
+
+        xor rax, rax
+        rdseed rax
+        mov qword [rbp-8], rax ; asm output a
+;assembly end
+    push qword [rbp-8] ; a
+    pop rax ; put ret value in rax
+    jmp _cpu_rdseed_end ; return
+_cpu_rdseed_end:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+
+
+
+
+global cpu_rdrand
+cpu_rdrand:
+    endbr64
+    push rbp
+    mov rbp, rsp
+    sub rsp, 16 ; function locals
+    push qword 0 ; int literal
+    pop rax ; extract initializer expr
+    mov qword [rbp-8], rax ; a
+;assembly start
+
+        xor rax, rax
+        rdrand rax
+        mov qword [rbp-8], rax ; asm output a
+;assembly end
+    push qword [rbp-8] ; a
+    pop rax ; put ret value in rax
+    jmp _cpu_rdrand_end ; return
+_cpu_rdrand_end:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+
+
+
+
 global strlen
 strlen:
     endbr64
@@ -120,8 +251,47 @@ _print_char_end:
 
 
 
-global print_str
-print_str:
+global print
+print:
+    endbr64
+    push rbp
+    mov rbp, rsp
+    sub rsp, 16 ; function locals
+    mov qword [rbp-8], rdi ; function parameter str
+    push qword 1 ; int literal
+    lea rax, [rbp-8] ; &str
+    push rax ; ref result
+    push qword [rbp-8] ; str
+    pop rdi ; call argument 0
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call strlen
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    pop rdx ; call argument 2
+    pop rsi ; call argument 1
+    pop rdi ; call argument 0
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call sys_write
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    pop rax ; discard expr
+_print_end:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+
+
+
+
+global println
+println:
     endbr64
     push rbp
     mov rbp, rsp
@@ -133,23 +303,21 @@ print_str:
     and rsp, -16
     sub rsp, 16
     mov [rsp], r10
-    call strlen
+    call print
     mov rsp, [rsp] ; restore caller rsp after call
     push rax ; call result
-    pop rax ; extract initializer expr
-    mov qword [rbp-16], rax ; len
-;assembly start
-    mov rsi, qword [rbp-8] ; asm input str
-    mov rdx, qword [rbp-16] ; asm input len
-
-        mov rax, 1          ; syscall: write
-        mov rdi, 1          ; file descriptor: stdout
-        ; pointer to message in rsi
-        ; message length in rdx
-        syscall
-    
-;assembly end
-_print_str_end:
+    pop rax ; discard expr
+    push qword 10 ; char literal
+    pop rdi ; call argument 0
+    mov r10, rsp ; save caller rsp before call
+    and rsp, -16
+    sub rsp, 16
+    mov [rsp], r10
+    call print_char
+    mov rsp, [rsp] ; restore caller rsp after call
+    push rax ; call result
+    pop rax ; discard expr
+_println_end:
     mov rsp, rbp
     pop rbp
     ret
@@ -314,7 +482,7 @@ print_bool:
     and rsp, -16
     sub rsp, 16
     mov [rsp], r10
-    call print_str
+    call print
     mov rsp, [rsp] ; restore caller rsp after call
     push rax ; call result
     pop rax ; discard expr
@@ -326,48 +494,12 @@ _if_4_else:
     and rsp, -16
     sub rsp, 16
     mov [rsp], r10
-    call print_str
+    call print
     mov rsp, [rsp] ; restore caller rsp after call
     push rax ; call result
     pop rax ; discard expr
 _if_4_end:
 _print_bool_end:
-    mov rsp, rbp
-    pop rbp
-    ret
-
-
-
-
-
-global println
-println:
-    endbr64
-    push rbp
-    mov rbp, rsp
-    sub rsp, 16 ; function locals
-    mov qword [rbp-8], rdi ; function parameter str
-    push qword [rbp-8] ; str
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call print_str
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; discard expr
-    push qword 10 ; char literal
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call print_char
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; discard expr
-_println_end:
     mov rsp, rbp
     pop rbp
     ret
@@ -521,7 +653,7 @@ print_hex:
     and rsp, -16
     sub rsp, 16
     mov [rsp], r10
-    call print_str
+    call print
     mov rsp, [rsp] ; restore caller rsp after call
     push rax ; call result
     pop rax ; discard expr
@@ -536,108 +668,6 @@ print_hex:
     push rax ; call result
     pop rax ; discard expr
 _print_hex_end:
-    mov rsp, rbp
-    pop rbp
-    ret
-
-
-
-
-
-global sys_exit
-sys_exit:
-    endbr64
-    push rbp
-    mov rbp, rsp
-    sub rsp, 16 ; function locals
-    mov qword [rbp-8], rdi ; function parameter exit_code
-;assembly start
-    mov rdi, qword [rbp-8] ; asm input exit_code
-
-        mov rax, 0x3c
-        syscall
-    
-;assembly end
-_sys_exit_end:
-    mov rsp, rbp
-    pop rbp
-    ret
-
-
-
-
-
-global sys_write
-sys_write:
-    endbr64
-    push rbp
-    mov rbp, rsp
-    sub rsp, 32 ; function locals
-    mov qword [rbp-8], rdi ; function parameter fd
-    mov qword [rbp-16], rsi ; function parameter buf
-    mov qword [rbp-24], rdx ; function parameter count
-;assembly start
-    mov rdi, qword [rbp-8] ; asm input fd
-    mov rsi, qword [rbp-16] ; asm input buf
-    mov rdx, qword [rbp-24] ; asm input count
-
-        mov rax, 1          ; syscall: write
-        syscall
-    
-;assembly end
-_sys_write_end:
-    mov rsp, rbp
-    pop rbp
-    ret
-
-
-
-
-
-global cpu_rdseed
-cpu_rdseed:
-    endbr64
-    push rbp
-    mov rbp, rsp
-    sub rsp, 16 ; function locals
-    push qword 0 ; int literal
-    pop rax ; extract initializer expr
-    mov qword [rbp-8], rax ; a
-;assembly start
-
-        rdseed rax
-        mov qword [rbp-8], rax ; asm output a
-;assembly end
-    push qword [rbp-8] ; a
-    pop rax ; put ret value in rax
-    jmp _cpu_rdseed_end ; return
-_cpu_rdseed_end:
-    mov rsp, rbp
-    pop rbp
-    ret
-
-
-
-
-
-global cpu_rdrand
-cpu_rdrand:
-    endbr64
-    push rbp
-    mov rbp, rsp
-    sub rsp, 16 ; function locals
-    push qword 0 ; int literal
-    pop rax ; extract initializer expr
-    mov qword [rbp-8], rax ; a
-;assembly start
-
-        rdrand rax
-        mov qword [rbp-8], rax ; asm output a
-;assembly end
-    push qword [rbp-8] ; a
-    pop rax ; put ret value in rax
-    jmp _cpu_rdrand_end ; return
-_cpu_rdrand_end:
     mov rsp, rbp
     pop rbp
     ret
@@ -931,56 +961,7 @@ main:
     endbr64
     push rbp
     mov rbp, rsp
-    sub rsp, 16 ; function locals
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call srand_hw
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; discard expr
-    push qword 0 ; int literal
-    pop rax ; extract initializer expr
-    mov dword [rbp-4], eax ; i
-_for_13_start:
-    movsx rax, dword [rbp-4] ; i
-    push rax ; i
-    push qword 20 ; int literal
-    pop rcx ; binary right
-    pop rax ; binary left
-    cmp rax, rcx
-    setl al
-    movzx rax, al
-    push rax ; binary result
-
-    pop rax
-    test rax, rax
-    jz _for_13_end
-    push qword 1 ; int literal
-    push qword 100 ; int literal
-    pop rsi ; call argument 1
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call rand_range
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; extract initializer expr
-    mov qword [rbp-12], rax ; randnum
-    push qword [rbp-12] ; randnum
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call print_uint64
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; discard expr
-    push _str_14
+    push _str_13
     pop rdi ; call argument 0
     mov r10, rsp ; save caller rsp before call
     and rsp, -16
@@ -990,16 +971,6 @@ _for_13_start:
     mov rsp, [rsp] ; restore caller rsp after call
     push rax ; call result
     pop rax ; discard expr
-_for_13_step:
-    lea rax, [rbp-4] ; &i
-    mov rcx, rax ; postfix address
-    movsxd rax, dword [rcx]
-    push rax ; postfix old value
-    inc rax
-    mov dword [rcx], eax
-    pop rax
-    jmp _for_13_start
-_for_13_end:
     push qword 0 ; int literal
     pop rax ; put ret value in rax
     jmp _main_end ; return
@@ -1020,5 +991,5 @@ section .rodata
     _str_5 db "true", 0
     _str_6 db "false", 0
     _str_9 db "0x", 0
-    _str_14 db 0
+    _str_13 db "hello world", 0
 

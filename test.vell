@@ -2,7 +2,6 @@
 
 
 
-
 void sys_read(uint64 fd, char* buf, uint64 count) {
     %{
         mov rax, 0 ; syscall: read
@@ -48,6 +47,9 @@ uint64 cpu_rdrand() {
     return a;
 }
 
+
+
+
 uint64 strlen(string str) {
     uint64 length = 0;
     while((*(char*)str) != 0){
@@ -57,13 +59,23 @@ uint64 strlen(string str) {
     return length;
 }
 
+
+
+
+
+
 //print functions
 void print_char(char out) {
     sys_write(1, &out, 1); //write 1 char to stdout
 }
 
-void print_str(string str) {
+void print(string str) {
     sys_write(1, &str, strlen(str)); //write string to stdout
+}
+
+void println(string str) {
+    print(str);
+    print_char('\n');
 }
 
 void print_uint64(uint64 num) {
@@ -74,7 +86,7 @@ void print_uint64(uint64 num) {
 }
 
 void print_int64(int64 num) {
-    if (num < 0) {
+    if(num < 0) {
         print_char('-');
         print_uint64((uint64)(0-num));
     }
@@ -85,21 +97,12 @@ void print_int64(int64 num) {
 
 void print_bool(bool value) {
     if(value) {
-        print_str("true");
+        print("true");
     }
     else {
-        print_str("false");
+        print("false");
     }
 }
-
-void println(string str) {
-    print_str(str);
-    print_char('\n');
-}
-
-
-
-
 
 
 void __io_print_hex_digit(uint64 digit) {
@@ -118,9 +121,16 @@ void __io_print_hex_uint64_inner(uint64 value) {
 }
 
 void print_hex(uint64 value) {
-    print_str("0x");
+    print("0x");
     __io_print_hex_uint64_inner(value);
 }
+
+
+
+
+
+
+
 
 
 
@@ -176,7 +186,7 @@ uint64 rand_range(uint64 min, uint64 max) {
 
 
 uint64 main() {
-    println("I love vel")
+    println("hello world");
     return 0;
 }
 
