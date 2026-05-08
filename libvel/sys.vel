@@ -1,6 +1,5 @@
 #once
 
-
 void sys_read(uint64 fd, char* buf, uint64 count) {
     %{
         mov rax, 0 ; syscall: read

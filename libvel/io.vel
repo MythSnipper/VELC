@@ -1,22 +1,18 @@
 #once
 #include:sys.vel
 
-uint64 strlen(string str) {
-    uint64 length = 0;
-    while((*(char*)str) != 0){
-        length++;
-        str = (string)((uint64)str + 1);
-    }
-    return length;
-}
-
 //print functions
 void print_char(char out) {
     sys_write(1, &out, 1); //write 1 char to stdout
 }
 
-void print_str(string str) {
+void print(string str) {
     sys_write(1, &str, strlen(str)); //write string to stdout
+}
+
+void println(string str) {
+    print_str(str);
+    print_char('\n');
 }
 
 void print_uint64(uint64 num) {
@@ -27,7 +23,7 @@ void print_uint64(uint64 num) {
 }
 
 void print_int64(int64 num) {
-    if (num < 0) {
+    if(num < 0) {
         print_char('-');
         print_uint64((uint64)(0-num));
     }
@@ -44,15 +40,6 @@ void print_bool(bool value) {
         print_str("false");
     }
 }
-
-void println(string str) {
-    print_str(str);
-    print_char('\n');
-}
-
-
-
-
 
 
 void __io_print_hex_digit(uint64 digit) {
@@ -71,6 +58,13 @@ void __io_print_hex_uint64_inner(uint64 value) {
 }
 
 void print_hex(uint64 value) {
-    print_str("0x");
+    print("0x");
     __io_print_hex_uint64_inner(value);
 }
+
+
+
+
+
+
+
