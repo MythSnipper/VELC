@@ -1,17 +1,25 @@
 #once
 
-void sys_read(uint64 fd, char* buf, uint64 count) {
+int64 sys_read(uint64 fd, char* buf, uint64 count) {
+    int64 ret = 0;
     %{
         mov rax, 0 ; syscall: read
         syscall
-    }$ in(fd -> rdi, buf -> rsi, count -> rdx)%
+    }$ in(fd -> rdi, buf -> rsi, count -> rdx)
+    out(rax -> ret)%
+    
+    return ret;
 }
 
-void sys_write(uint64 fd, char* buf, uint64 count) {
+int64 sys_write(uint64 fd, char* buf, uint64 count) {
+    int64 ret = 0;
     %{
         mov rax, 1 ; syscall: write
         syscall
-    }$ in(fd -> rdi, buf -> rsi, count -> rdx)%
+    }$ in(fd -> rdi, buf -> rsi, count -> rdx)
+    out(rax -> ret)%
+
+    return ret;
 }
 
 void sys_exit(uint64 exit_code) {
@@ -20,8 +28,6 @@ void sys_exit(uint64 exit_code) {
         syscall
     }$ in(exit_code -> rdi)%
 }
-
-
 
 
 

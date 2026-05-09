@@ -192,8 +192,8 @@ Options:
         Ok(())
     }
     pub fn run(&mut self) -> Result<(), String> {
-        let lexer_debug = false;
-        let parser_debug = false;
+        let lexer_debug = true;
+        let parser_debug = true;
         let codegen_debug = true;
 
         //read source code from input file

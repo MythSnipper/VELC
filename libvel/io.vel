@@ -8,7 +8,7 @@ void print_char(char out) {
 }
 
 void print(string str) {
-    sys_write(1, &str, strlen(str)); //write string to stdout
+    sys_write(1, (char*)str, strlen(str)); //write string to stdout
 }
 
 void println(string str) {

@@ -592,6 +592,10 @@ impl Parser {
         }
         else {
             match self.get().Type {
+                TokenType::Semicolon => {
+                    self.advance();
+                    Stmt::Empty
+                }
                 TokenType::If_Keyword => {
                     self.parse_if_stmt()?
                 }
@@ -648,9 +652,12 @@ impl Parser {
     
         // Simple case:
         // int32 x;
+        // or array decl
+        // int32 x[3][4];
         if self.check(&TokenType::Identifier) {
             let name = self.consume_identifier()?;
-            return Ok((name, base));
+            let full_type = self.parse_array_suffixes(base)?;
+            return Ok((name, full_type));
         }
     
         // Function pointer case:
@@ -697,11 +704,19 @@ impl Parser {
         self.error(ERROR_STRING_ROOT, "Expected identifier or function pointer declarator")
     }
     fn parse_var_decl_stmt(&mut self) -> Result<Stmt, String> {
-        
+        let ERROR_STRING_ROOT = "velc:Parser:parse_var_decl_stmt";
+
         let base = self.parse_type()?;
         let (id, t) = self.parse_decl_name_and_type(base)?;
     
         let init = if self.matches(&TokenType::Assign) {
+            if matches!(t, TypeName::Array(_, _)) {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    "Array initializers not implemented"
+                );
+            }
+
             Some(self.parse_expr()?)
         }
         else {
@@ -1523,8 +1538,52 @@ impl Parser {
         }
     }
 
+    fn parse_array_suffixes(&mut self, base: TypeName) -> Result<TypeName, String> {
+        let ERROR_STRING_ROOT = "velc:Parser:parse_array_suffixes";
+    
+        let mut dims: Vec<usize> = Vec::new();
+    
+        while self.matches(&TokenType::Lbracket) {
+            let size_token = self.expect(&TokenType::Int_Literal)?;
+    
+            let size = match size_token.Value {
+                TokenValue::Int(v) => {
+                    if v <= 0 {
+                        return self.error(
+                            ERROR_STRING_ROOT,
+                            "Array size must be greater than zero",
+                        );
+                    }
+    
+                    v as usize
+                }
+    
+                _ => {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        "Expected integer literal as array size",
+                    );
+                }
+            };
+    
+            self.expect(&TokenType::Rbracket)?;
+    
+            dims.push(size);
+        }
+    
+        let mut ty = base;
+    
+        for dim in dims.into_iter().rev() {
+            ty = TypeName::Array(Box::new(ty), dim);
+        }
+    
+        Ok(ty)
+    }
+
+
     fn error<T>(&self, base: &str, err: &str) -> Result<T, String> {
         Err(format!("{base}:{err} \nCurrent token:\n\tType {:?}\n\tPosition {}:{}", self.get().Type, self.get().Span.row, self.get().Span.col))
     }
+
 
 }

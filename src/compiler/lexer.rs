@@ -171,7 +171,7 @@ impl Lexer {
 
             let new_token = match ch {
                 //skip whitespace
-                ' ' | '\n' | '\t' => {
+                ' ' | '\n' | '\t' | '\r' => {
                     self.whitespace()?
                 }
                 //comments
@@ -191,7 +191,7 @@ impl Lexer {
                 }
 
                 //keyword or identifier
-                'a'..='z' | '_' => { //all keywords and identifiers
+                'a'..='z' | 'A'..='Z' | '_' => { //all keywords and identifiers
                     self.scan_keyword_or_identifier()?
                 }
 
@@ -303,7 +303,7 @@ impl Lexer {
                     self.scan_operator(TokenType::Gte, 2)?
                 }
                 '>' => { //Gt
-                    self.scan_operator(TokenType::Gt, 2)?
+                    self.scan_operator(TokenType::Gt, 1)?
                 }
                 '~' if next_ch == '=' => { //Not_Assign
                     self.scan_operator(TokenType::Not_Assign, 2)?
