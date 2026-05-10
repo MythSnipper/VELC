@@ -1,26 +1,197 @@
 
+
+
+
+int64 sys_read(uint64 fd, char* buf, uint64 count) {
+    int64 ret = 0;
+    %{
+        mov rax, 0 ; syscall: read
+        syscall
+    }$ in(fd -> rdi, buf -> rsi, count -> rdx)
+    out(rax -> ret)%
+    
+    return ret;
+}
+
+int64 sys_write(uint64 fd, char* buf, uint64 count) {
+    int64 ret = 0;
+    %{
+        mov rax, 1 ; syscall: write
+        syscall
+    }$ in(fd -> rdi, buf -> rsi, count -> rdx)
+    out(rax -> ret)%
+
+    return ret;
+}
+
+void sys_exit(uint64 exit_code) {
+    %{
+        mov rax, 0x3c
+        syscall
+    }$ in(exit_code -> rdi)%
+}
+
+
+
+uint64 cpu_rdseed() {
+    uint64 a = 0;
+    %{
+        xor rax, rax
+        rdseed rax
+    }$ out(rax -> a)%
+
+    return a;
+}
+
+uint64 cpu_rdrand() {
+    uint64 a = 0;
+    %{
+        xor rax, rax
+        rdrand rax
+    }$ out(rax -> a)%
+
+    return a;
+}
+
+
+uint64 strlen(string str) {
+    uint64 length = 0;
+    while((*(char*)str) != 0){
+        length++;
+        str = (string)((uint64)str + 1);
+    }
+    return length;
+}
+
+
+//print functions
+void print_char(char out) {
+    sys_write(1, &out, 1); //write 1 char to stdout
+}
+
+void print(string str) {
+    sys_write(1, (char*)str, strlen(str)); //write string to stdout
+}
+
+void println(string str) {
+    print(str);
+    print_char('\n');
+}
+
+void print_uint64(uint64 num) {
+    if (num >= 10) {
+        print_uint64(num / 10);
+    }
+    print_char((char)((num % 10) + '0'));
+}
+
+void print_int64(int64 num) {
+    if(num < 0) {
+        print_char('-');
+        print_uint64((uint64)(0-num));
+    }
+    else{
+        print_uint64((uint64)num);
+    }
+}
+
+void print_bool(bool value) {
+    if(value) {
+        print("true");
+    }
+    else {
+        print("false");
+    }
+}
+
+
+void __io_print_hex_digit(uint64 digit) {
+    if(digit < 10) {
+        print_char((char)(digit + '0'));
+    }
+    else {
+        print_char((char)((digit - 10) + 'a'));
+    }
+}
+void __io_print_hex_uint64_inner(uint64 value) {
+    if(value >= 16) {
+        __io_print_hex_uint64_inner(value / 16);
+    }
+    __io_print_hex_digit(value % 16);
+}
+
+void print_hex(uint64 value) {
+    print("0x");
+    __io_print_hex_uint64_inner(value);
+}
+
+
+
+
+
+
+
+
+
+
+uint64 __random_rand_state = 67676767;
+
+//seed the pseudo-random number generator
+void srand(uint64 seed) {
+    if(seed == 0) {
+        seed = 67676767;
+    }
+
+    __random_rand_state = seed;
+
+    for(int32 i=0;i<10;i++) {
+        rand64();
+    }
+}
+
+//seed the pseudo-random number generator using rdrand
+void srand_hw() {
+    __random_rand_state = cpu_rdrand();
+
+    for(int32 i=0;i<10;i++) {
+        rand64();
+    }
+}
+
+//returns a random 64 bit number
+uint64 rand64() {
+    uint64 x = __random_rand_state;
+
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+
+    __random_rand_state = x;
+
+    return x;
+}
+
+//generates a random number in [min, max]
+uint64 rand_range(uint64 min, uint64 max) {
+    uint64 diff = max - min + 1;
+    uint64 result = rand64() % diff + min;
+    return result;
+}
+
+
+
+
+
+
+
+
+
+
 uint64 main() {
-    char buf[30][4];
-    buf[4] = 3;
+    println("Hello World!");
+
     return 0;
 }
-
-/{
-void test() {
-    println(sekai);
-    print("Enter: ");
-
-    char buf = 0;
-
-    int64 n = -1;
-    
-    while(n <= 0) {
-        n = sys_read(0, &buf, 1);
-    }
-    print_char(buf);
-    println("");
-}
-}/
 
 
 

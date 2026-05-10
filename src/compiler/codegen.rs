@@ -126,7 +126,22 @@ impl CodeGenerator {
             TypeName::Builtin(BuiltinType::String) => Ok(8), // pointer
             TypeName::Pointer(_) => Ok(8),
     
-            _ => self.error(ERROR_STRING_ROOT, &format!("Unsupported global type size for {:?}", Type)),
+            TypeName::Array(elem, count) => {
+                let elem_size = self.type_size(elem)?;
+                Ok(elem_size * count)
+            }
+    
+            TypeName::Function { .. } => {
+                self.error(ERROR_STRING_ROOT, "Function type has no storage size")
+            }
+    
+            TypeName::Builtin(BuiltinType::Void) => {
+                self.error(ERROR_STRING_ROOT, "Void type has no storage size")
+            }
+    
+            TypeName::IntLiteral | TypeName::FloatLiteral => {
+                self.error(ERROR_STRING_ROOT, "Literal pseudo-type has no storage size")
+            }
         }
     }
     fn type_sign(&self, Type: &TypeName) -> Result<Sign, String> {
@@ -151,7 +166,14 @@ impl CodeGenerator {
     
             TypeName::Builtin(BuiltinType::String) => Sign::Unsigned, // pointer
             TypeName::Pointer(_) => Sign::Unsigned,
-    
+            
+            TypeName::Array(_, _) => {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("Array type has no sign: {:?}", Type),
+                );
+            }
+
             _ => return self.error(ERROR_STRING_ROOT, &format!("Unsupported global type size for {:?}", Type)),
         };
         Ok(ret)
@@ -172,6 +194,13 @@ impl CodeGenerator {
     fn data_directive(&self, Type: &TypeName) -> Result<&'static str, String> {
         let ERROR_STRING_ROOT = "velc:CodeGenerator:data_directive";
     
+        if self.is_array_type(Type) {
+            return self.error(
+                ERROR_STRING_ROOT,
+                "Array data directives are handled separately",
+            );
+        }
+
         match self.type_size(Type)? {
             1 => Ok("db"),
             2 => Ok("dw"),
@@ -183,6 +212,13 @@ impl CodeGenerator {
     fn bss_directive(&self, Type: &TypeName) -> Result<&'static str, String> {
         let ERROR_STRING_ROOT = "velc:CodeGenerator:bss_directive";
     
+        if self.is_array_type(Type) {
+            return self.error(
+                ERROR_STRING_ROOT,
+                "Array bss directives are handled separately",
+            );
+        }
+
         match self.type_size(Type)? {
             1 => Ok("resb"),
             2 => Ok("resw"),
@@ -190,6 +226,29 @@ impl CodeGenerator {
             8 => Ok("resq"),
             n => self.error(ERROR_STRING_ROOT, &format!("Unsupported bss size {}", n)),
         }
+    }
+    fn emit_bss_reservation_for_type(&mut self, name: &str, Type: &TypeName) -> Result<(), String> { //arrays
+        let total_size = self.type_size(Type)?;
+    
+        match Type {
+            TypeName::Array(_, _) => {
+                self.push_section(
+                    "bss",
+                    &format!("    {} resb {}", name, total_size),
+                )?;
+            }
+    
+            _ => {
+                let dir = self.bss_directive(Type)?;
+    
+                self.push_section(
+                    "bss",
+                    &format!("    {} {} 1", name, dir),
+                )?;
+            }
+        }
+    
+        Ok(())
     }
 
     fn format_nasm_string_bytes(&self, s: &str) -> String {
@@ -566,6 +625,165 @@ impl CodeGenerator {
         Ok((self.func.current_local_offset, Type.clone()))
     }
 
+    //Add arrays
+    fn is_array_type(&self, t: &TypeName) -> bool {
+        matches!(t, TypeName::Array(_, _))
+    }
+    fn array_element_type(&self, t: &TypeName) -> Option<TypeName> {
+        match t {
+            TypeName::Array(elem, _) => Some((**elem).clone()),
+            _ => None,
+        }
+    }
+    fn indexed_element_type(&self, t: &TypeName) -> Result<TypeName, String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:indexed_element_type";
+    
+        match t {
+            TypeName::Array(elem, _) => Ok((**elem).clone()),
+            TypeName::Pointer(elem) => Ok((**elem).clone()),
+    
+            other => self.error(
+                ERROR_STRING_ROOT,
+                &format!("Cannot index non-array/non-pointer type {:?}", other),
+            ),
+        }
+    }
+    fn lookup_var_type(&self, name: &str) -> Result<TypeName, String> {
+        if let Ok((_offset, ty)) = self.lookup_local_var(name) {
+            return Ok(ty);
+        }
+    
+        self.lookup_global_var(name)
+    }
+    
+    fn reject_array_asm_binding(&self, t: &TypeName, name: &str) -> Result<(), String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:reject_array_asm_binding";
+    
+        if matches!(t, TypeName::Array(_, _)) {
+            return self.error(
+                ERROR_STRING_ROOT,
+                &format!(
+                    "Array '{}' cannot be used directly in asm metadata; use a pointer like &{}[0]",
+                    name,
+                    name
+                ),
+            );
+        }
+    
+        Ok(())
+    }
+    
+    fn emit_load_value_at_rax(&mut self, t: &TypeName, comment: &str) -> Result<(), String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_load_value_at_rax";
+    
+        if matches!(t, TypeName::Array(_, _)) {
+            return self.error(
+                ERROR_STRING_ROOT,
+                &format!("Cannot load array value directly: {:?}", t),
+            );
+        }
+    
+        let size = self.type_size(t)?;
+    
+        match size {
+            1 => match self.type_sign(t)? {
+                Sign::Unsigned => self.push_section("text", &format!("    movzx rax, byte [rax] ; {}", comment))?,
+                Sign::Signed => self.push_section("text", &format!("    movsx rax, byte [rax] ; {}", comment))?,
+            },
+    
+            2 => match self.type_sign(t)? {
+                Sign::Unsigned => self.push_section("text", &format!("    movzx rax, word [rax] ; {}", comment))?,
+                Sign::Signed => self.push_section("text", &format!("    movsx rax, word [rax] ; {}", comment))?,
+            },
+    
+            4 => match self.type_sign(t)? {
+                Sign::Unsigned => self.push_section("text", &format!("    mov eax, dword [rax] ; {}", comment))?,
+                Sign::Signed => self.push_section("text", &format!("    movsxd rax, dword [rax] ; {}", comment))?,
+            },
+    
+            8 => {
+                self.push_section("text", &format!("    mov rax, qword [rax] ; {}", comment))?;
+            }
+    
+            _ => {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("Unsupported scalar load size {}", size),
+                );
+            }
+        }
+    
+        Ok(())
+    }
+    fn emit_index_base_addr(&mut self, base: &Expr) -> Result<TypeName, String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_index_base_addr";
+    
+        match base {
+            Expr::Identifier(name) => {
+                let ty = self.lookup_var_type(name)?;
+    
+                match &ty {
+                    TypeName::Array(_, _) => {
+                        // Array variable itself is storage.
+                        // Address of array == address of element 0.
+                        self.emit_addr(base)?;
+                        Ok(ty)
+                    }
+    
+                    TypeName::Pointer(_) => {
+                        // Pointer variable stores an address.
+                        self.emit_expr(base)?;
+                        self.push_section("text", "    pop rax ; pointer base for index")?;
+                        Ok(ty)
+                    }
+    
+                    other => {
+                        self.error(
+                            ERROR_STRING_ROOT,
+                            &format!("Cannot index non-array/non-pointer type {:?}", other),
+                        )
+                    }
+                }
+            }
+    
+            Expr::Index { .. } => {
+                // For matrix[i][j]:
+                // matrix[i] is addressable and may still have array type.
+                self.emit_addr(base)
+            }
+    
+            Expr::Prefix {
+                op: PrefixOp::Deref,
+                ..
+            } => {
+                // (*ptr)[i], where *ptr may be an array object.
+                self.emit_addr(base)
+            }
+    
+            _ => {
+                // General computed base must evaluate to a pointer.
+                let ty = self.emit_expr(base)?;
+    
+                self.push_section("text", "    pop rax ; computed index base")?;
+    
+                match &ty {
+                    TypeName::Pointer(_) => Ok(ty),
+    
+                    other => {
+                        self.error(
+                            ERROR_STRING_ROOT,
+                            &format!("Cannot index non-pointer expression type {:?}", other),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+
+
+
+
     fn emit_program(&mut self, program: &Program) -> Result<(), String> {
         self.collect_top_level_symbols(program)?;
         
@@ -596,6 +814,9 @@ impl CodeGenerator {
         let mut inputs_text = String::new();
         for i in &decl.inputs {
             let t: TypeName = self.lookup_global_var(&i.name)?;
+
+            self.reject_array_asm_binding(&t, &i.name)?;
+
             let typesize = self.type_size(&t)?;
             inputs_text.push_str(&format!("mov {}, {} [{}] ; global asm input\n", 
                 self.format_reg_size(&i.reg, typesize)?, 
@@ -607,6 +828,10 @@ impl CodeGenerator {
         let mut outputs_text = String::new();
         for i in &decl.outputs {
             let t: TypeName = self.lookup_global_var(&i.name)?;
+
+            self.reject_array_asm_binding(&t, &i.name)?;
+
+
             let typesize = self.type_size(&t)?;
             outputs_text.push_str(&format!("mov {} [{}], {} ; global asm output\n", 
                 self.size_specifier(typesize)?,
@@ -619,19 +844,41 @@ impl CodeGenerator {
         text.push_str(&outputs_text);
 
         self.push_section(&decl.section, "    ; global asm start")?;
-
         self.push_section(&decl.section, &text)?;
-
         self.push_section(&decl.section, "    ; global asm end")?;
 
         Ok(())
     }
     fn emit_global_var(&mut self, decl: &VarDecl) -> Result<(), String> {
         let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_global_var";
+    
         self.globals.insert(
             decl.name.clone(),
-            decl.Type.clone()
+            decl.Type.clone(),
         );
+    
+        match &decl.Type {
+            TypeName::Array(_, _) => {
+                if decl.init.is_some() {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        "Global array initializers are not implemented yet",
+                    );
+                }
+    
+                let total_size = self.type_size(&decl.Type)?;
+    
+                self.push_section(
+                    "bss",
+                    &format!("    {} resb {}", decl.name, total_size),
+                )?;
+    
+                return Ok(());
+            }
+    
+            _ => {}
+        }
+    
         match &decl.init {
             Some(init) => {
                 let dir = self.data_directive(&decl.Type)?;
@@ -644,6 +891,7 @@ impl CodeGenerator {
     
                 Ok(())
             }
+    
             None => {
                 let dir = self.bss_directive(&decl.Type)?;
     
@@ -683,6 +931,14 @@ impl CodeGenerator {
         let mut parameter_scope = HashMap::new();
 
         for (i, param) in decl.params.iter().enumerate() {
+
+            if matches!(param.Type, TypeName::Array(_, _)) {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    "Array parameters are not supported in codegen; use a pointer parameter",
+                );
+            }
+
             let reg = match self.arg_register(i) {
                 Some(reg) => reg,
                 None => {
@@ -758,6 +1014,9 @@ _start:
         for i in &decl.inputs {
             if let Ok(te) = self.lookup_local_var(&i.name) {
                 let (offset, t) = te;
+
+                self.reject_array_asm_binding(&t, &i.name)?;
+
                 let typesize = self.type_size(&t)?;
                 inputs_text.push_str(&format!("    mov {}, {} [rbp{}] ; asm input {}\n",
                     self.format_reg_size(&i.reg, typesize)?,
@@ -768,6 +1027,9 @@ _start:
             }
             else {
                 let t: TypeName = self.lookup_global_var(&i.name)?;
+
+                self.reject_array_asm_binding(&t, &i.name)?;
+
                 let typesize = self.type_size(&t)?;
                 inputs_text.push_str(&format!("    mov {}, {} [{}] ; asm input {}\n", 
                     self.format_reg_size(&i.reg, typesize)?, 
@@ -783,6 +1045,9 @@ _start:
         for i in &decl.outputs {
             if let Ok(te) = self.lookup_local_var(&i.name) {
                 let (offset, t) = te;
+
+                self.reject_array_asm_binding(&t, &i.name)?;
+
                 let typesize = self.type_size(&t)?;
                 outputs_text.push_str(&format!("    mov {} [rbp{}], {} ; asm output {}\n",
                     self.size_specifier(typesize)?,
@@ -793,6 +1058,9 @@ _start:
             }
             else {
                 let t: TypeName = self.lookup_global_var(&i.name)?;
+
+                self.reject_array_asm_binding(&t, &i.name)?;
+
                 let typesize = self.type_size(&t)?;
                 outputs_text.push_str(&format!("    mov {} [{}], {} ; asm output {}\n", 
                     self.size_specifier(typesize)?,
@@ -872,29 +1140,57 @@ _start:
         Ok(())
     }
     fn emit_var(&mut self, decl: &VarDecl, ret_label: &str) -> Result<(), String> {
-        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_expr_stmt";
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_var";
+
         let (offset, t) = self.get_next_local_slot(&decl.Type)?;
-        let size = self.type_size(&t)?;
 
         let map = self.func.local_scopes.last_mut().unwrap();
-        map.insert(decl.name.clone(), (offset, t));
+        map.insert(decl.name.clone(), (offset, t.clone()));
 
-        let mut text = String::new();
+        match &t {
+            TypeName::Array(_, _) => {
+                if decl.init.is_some() {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        "Array initializers are not implemented yet",
+                    );
+                }
+
+                self.push_section(
+                    "text",
+                    &format!(
+                        "    ; local array {} at [rbp{}], {} bytes",
+                        decl.name,
+                        self.format_offset(offset),
+                        self.type_size(&t)?
+                    ),
+                )?;
+
+                return Ok(());
+            }
+
+            _ => {}
+        }
+
+        let size = self.type_size(&t)?;
+
         if let Some(init) = decl.init.clone() {
             self.emit_expr(&init)?;
 
-            text.push_str("    pop rax ; extract initializer expr\n");
+            self.push_section("text", "    pop rax ; extract initializer expr")?;
 
-            text.push_str(&format!(
-                "    mov {} [rbp{}], {} ; {}",
-                self.size_specifier(size)?,
-                self.format_offset(offset),
-                self.format_reg_size("rax", size)?,
-                decl.name
-            ));
+            self.push_section(
+                "text",
+                &format!(
+                    "    mov {} [rbp{}], {} ; {}",
+                    self.size_specifier(size)?,
+                    self.format_offset(offset),
+                    self.format_reg_size("rax", size)?,
+                    decl.name
+                ),
+            )?;
         }
 
-        self.push_section("text", &text)?;
         Ok(())
     }
     fn emit_return(&mut self, ret: &Option<Expr>, ret_label: &str) -> Result<(), String> {
@@ -1058,9 +1354,16 @@ _start:
 
                 TypeName::Builtin(BuiltinType::Char)
             }
-            Expr::StringLiteral(val) => {
+            Expr::StringLiteral(_) => {
                 let str_ptr = self.emit_static_initializer_value(expr)?;
-                self.push_section("text", &format!("    push {str_ptr}"))?;
+            
+                self.push_section("text", &format!(
+                    "    lea rax, [{}] ; string literal address",
+                    str_ptr
+                ))?;
+            
+                self.push_section("text", "    push rax")?;
+            
                 TypeName::Builtin(BuiltinType::String)
             }
             Expr::Identifier(id) => {
@@ -1088,7 +1391,20 @@ _start:
                 self.emit_call(callee, args)?
             }
             Expr::Index { .. } => {
-                return self.error(ERROR_STRING_ROOT, "Index expressions are not implemented in backend yet");
+                let elem_ty = self.emit_addr(expr)?;
+            
+                if matches!(elem_ty, TypeName::Array(_, _)) {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        "Cannot use array value directly; index it further or take its address",
+                    );
+                }
+            
+                self.emit_load_value_at_rax(&elem_ty, "indexed value")?;
+            
+                self.push_section("text", "    push rax ; indexed value")?;
+            
+                elem_ty
             }
             Expr::Member { .. } => {
                 return self.error(ERROR_STRING_ROOT, "Member access is not implemented in backend yet");
@@ -1098,73 +1414,66 @@ _start:
     }
     fn emit_identifier(&mut self, id: &str) -> Result<TypeName, String> {
         let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_identifier";
-        let mut text = String::new();
-                
-        let ret = if let Ok(te) = self.lookup_local_var(id) {
-            let (offset, t) = te;
-            let typesize = self.type_size(&t)?;
-            if typesize != 8 {
-                match self.type_sign(&t)? {
-                    Sign::Unsigned => {
-                        text.push_str(&format!("    movzx rax, {} [rbp{}] ; {}\n",
-                            self.size_specifier(typesize)?,
-                            self.format_offset(offset),
-                            id
-                        ));
-                    }
-                    Sign::Signed => {
-                        text.push_str(&format!("    movsx rax, {} [rbp{}] ; {}\n",
-                            self.size_specifier(typesize)?,
-                            self.format_offset(offset),
-                            id
-                        ));
-                    }
-                };
-                text.push_str(&format!("    push rax ; {}\n",
-                    id
-                ));
+    
+        if let Ok((offset, t)) = self.lookup_local_var(id) {
+            if matches!(t, TypeName::Array(_, _)) {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("Cannot use local array '{}' as a value; use &{}[0]", id, id),
+                );
             }
-            else {
-                text.push_str(&format!("    push qword [rbp{}] ; {}\n",
-                    self.format_offset(offset),
-                    id
-                ));
-            }
-            t
+    
+            self.push_section("text", &format!(
+                "    lea rax, [rbp{}] ; address of local {}",
+                self.format_offset(offset),
+                id
+            ))?;
+    
+            self.emit_load_value_at_rax(&t, id)?;
+    
+            self.push_section("text", &format!("    push rax ; {}", id))?;
+    
+            return Ok(t);
         }
-        else {
-            let t: TypeName = self.lookup_global_var(id)?;
-            let typesize = self.type_size(&t)?;
-            if typesize != 8 {
-                match self.type_sign(&t)? {
-                    Sign::Unsigned => {
-                        text.push_str(&format!("    movzx rax, {} [{}] ; {id}\n",
-                            self.size_specifier(typesize)?,
-                            id
-                        ));
-                    }
-                    Sign::Signed => {
-                        text.push_str(&format!("    movsx rax, {} [{}] ; {id}\n",
-                            self.size_specifier(typesize)?,
-                            id
-                        ));
-                    }
-                };
-                text.push_str(&format!("    push rax ; {}\n",
-                    id
-                ));
+    
+        if let Ok(t) = self.lookup_global_var(id) {
+            if matches!(t, TypeName::Array(_, _)) {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("Cannot use global array '{}' as a value; use &{}[0]", id, id),
+                );
             }
-            else {
-                text.push_str(&format!("    push qword [{}] ; {id}\n",
-                    id
-                ));
-            }
-            t
-        };
-
-        self.push_section("text", &text)?;
-
-        Ok(ret)
+    
+            self.push_section("text", &format!(
+                "    lea rax, [rel {}] ; address of global {}",
+                id,
+                id
+            ))?;
+    
+            self.emit_load_value_at_rax(&t, id)?;
+    
+            self.push_section("text", &format!("    push rax ; {}", id))?;
+    
+            return Ok(t);
+        }
+    
+        // Function identifier as value, useful for function pointers.
+        if let Ok(t) = self.lookup_function(id) {
+            self.push_section("text", &format!(
+                "    lea rax, [rel {}] ; function address {}",
+                id,
+                id
+            ))?;
+    
+            self.push_section("text", &format!("    push rax ; function {}", id))?;
+    
+            return Ok(t);
+        }
+    
+        self.error(
+            ERROR_STRING_ROOT,
+            &format!("Unknown identifier '{}'", id),
+        )
     }
     fn emit_prefix(&mut self, op: &PrefixOp, expr: &Box<Expr>) -> Result<TypeName, String> {
         let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_prefix";
@@ -1191,6 +1500,12 @@ _start:
             }
             PrefixOp::Inc => {
                 let expr_type = self.emit_addr(expr)?;
+                if matches!(expr_type, TypeName::Array(_, _)) {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        "Cannot increment array value",
+                    );
+                }
                 let size = self.type_size(&expr_type)?;
 
                 self.push_section("text", "    mov rcx, rax ; prefix inc addr")?;
@@ -1235,6 +1550,12 @@ _start:
 
             PrefixOp::Dec => {
                 let expr_type = self.emit_addr(expr)?;
+                if matches!(expr_type, TypeName::Array(_, _)) {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        "Cannot increment array value",
+                    );
+                }
                 let size = self.type_size(&expr_type)?;
 
                 self.push_section("text", "    mov rcx, rax ; prefix dec addr")?;
@@ -1305,28 +1626,19 @@ _start:
                     _ => return self.error(ERROR_STRING_ROOT, "Cannot dereference non-pointer"),
                 };
 
-                let size = self.type_size(&inner_ty)?;
-
-                self.push_section("text", "    pop rax")?;
-
-                match size {
-                    1 => match self.type_sign(&inner_ty)? {
-                        Sign::Unsigned => self.push_section("text", "    movzx rax, byte [rax]")?,
-                        Sign::Signed => self.push_section("text", "    movsx rax, byte [rax]")?,
-                    },
-                    2 => match self.type_sign(&inner_ty)? {
-                        Sign::Unsigned => self.push_section("text", "    movzx rax, word [rax]")?,
-                        Sign::Signed => self.push_section("text", "    movsx rax, word [rax]")?,
-                    },
-                    4 => match self.type_sign(&inner_ty)? {
-                        Sign::Unsigned => self.push_section("text", "    mov eax, dword [rax]")?,
-                        Sign::Signed => self.push_section("text", "    movsxd rax, dword [rax]")?,
-                    },
-                    8 => self.push_section("text", "    mov rax, qword [rax]")?,
-                    _ => return self.error(ERROR_STRING_ROOT, "Unsupported dereference size"),
+                if matches!(inner_ty, TypeName::Array(_, _)) {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        "Cannot use dereferenced array as value; index it or take its address",
+                    );
                 }
 
-                self.push_section("text", "    push rax")?;
+                self.push_section("text", "    pop rax ; deref pointer")?;
+
+                self.emit_load_value_at_rax(&inner_ty, "dereference")?;
+
+                self.push_section("text", "    push rax ; dereference result")?;
+
                 inner_ty
             }
         };
@@ -1343,18 +1655,36 @@ _start:
                         self.format_offset(offset),
                         name
                     ))?;
-                    Ok(ty)
+    
+                    return Ok(ty);
                 }
-                else {
-                    let ty = self.lookup_global_var(name)?;
+    
+                if let Ok(ty) = self.lookup_global_var(name) {
                     self.push_section("text", &format!(
-                        "    lea rax, [{}] ; &{}",
+                        "    lea rax, [rel {}] ; &{}",
                         name,
                         name
                     ))?;
-                    Ok(ty)
+    
+                    return Ok(ty);
                 }
+    
+                if let Ok(ty) = self.lookup_function(name) {
+                    self.push_section("text", &format!(
+                        "    lea rax, [rel {}] ; &{}",
+                        name,
+                        name
+                    ))?;
+    
+                    return Ok(ty);
+                }
+    
+                self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("Unknown addressable identifier '{}'", name),
+                )
             }
+    
             Expr::Prefix {
                 op: PrefixOp::Deref,
                 expr,
@@ -1372,14 +1702,37 @@ _start:
                     ),
                 }
             }
-            Expr::Index { .. } => {
-                return self.error(ERROR_STRING_ROOT, "Index expressions are not addressable yet");
+    
+            Expr::Index { base, index } => {
+                let base_ty = self.emit_index_base_addr(base)?;
+                let elem_ty = self.indexed_element_type(&base_ty)?;
+                let elem_size = self.type_size(&elem_ty)?;
+    
+                self.push_section("text", "    push rax ; index base address")?;
+    
+                self.emit_expr(index)?;
+    
+                self.push_section("text", "    pop rcx ; index value")?;
+                self.push_section("text", "    pop rax ; index base address")?;
+    
+                if elem_size != 1 {
+                    self.push_section("text", &format!(
+                        "    imul rcx, {} ; scale index by element size",
+                        elem_size
+                    ))?;
+                }
+    
+                self.push_section("text", "    add rax, rcx ; indexed element address")?;
+    
+                Ok(elem_ty)
             }
+    
             Expr::Member { .. } => {
-                return self.error(ERROR_STRING_ROOT, "Member expressions are not addressable yet");
+                self.error(ERROR_STRING_ROOT, "Member expressions are not addressable yet")
             }
+    
             _ => {
-                return self.error(ERROR_STRING_ROOT, "Expression is not addressable");
+                self.error(ERROR_STRING_ROOT, "Expression is not addressable")
             }
         }
     }
@@ -1387,6 +1740,12 @@ _start:
         let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_postfix";
     
         let expr_type = self.emit_addr(expr)?;
+        if matches!(expr_type, TypeName::Array(_, _)) {
+            return self.error(
+                ERROR_STRING_ROOT,
+                "Cannot apply postfix operator to array value",
+            );
+        }
         let size = self.type_size(&expr_type)?;
     
         self.push_section("text", "    mov rcx, rax ; postfix address")?;
@@ -1672,6 +2031,12 @@ _start:
         let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_assign";
 
         let left_type = self.emit_addr(left)?;
+        if matches!(left_type, TypeName::Array(_, _)) {
+            return self.error(
+                ERROR_STRING_ROOT,
+                "Cannot assign to whole array value",
+            );
+        }
         let size = self.type_size(&left_type)?;
 
         match op {
@@ -1680,7 +2045,14 @@ _start:
                 self.push_section("text", "    push rax ; assignment destination address")?;
 
                 // stack: address, right_value
-                self.emit_expr(right)?;
+                let right_type = self.emit_expr(right)?;
+
+                if matches!(right_type, TypeName::Array(_, _)) {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        "Cannot assign array value",
+                    );
+                }
 
                 self.push_section("text", "    pop rax ; assignment value")?;
                 self.push_section("text", "    pop rcx ; assignment destination address")?;
@@ -1743,7 +2115,14 @@ _start:
                 self.push_section("text", "    push rax ; compound assignment left value")?;
 
                 // stack: address, left_value, right_value
-                self.emit_expr(right)?;
+                let right_type = self.emit_expr(right)?;
+
+                if matches!(right_type, TypeName::Array(_, _)) {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        "Cannot use array value in compound assignment",
+                    );
+                }
 
                 self.push_section("text", "    pop r10 ; compound assignment right value")?;
                 self.push_section("text", "    pop rax ; compound assignment left value")?;

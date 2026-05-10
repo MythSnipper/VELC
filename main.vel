@@ -1,0 +1,27 @@
+#include:stdlib.vel
+#define sekai "Hello world"
+
+uint64 main() {
+
+    return 0;
+}
+
+
+void test() {
+    println(sekai);
+    print("Enter: ");
+
+    char buf = 0;
+
+    int64 n = -1;
+    
+    while(n <= 0) {
+        n = sys_read(0, &buf, 1);
+    }
+    print_char(buf);
+    println("");
+}
+
+
+
+

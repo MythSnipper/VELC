@@ -1,7 +1,5 @@
 #once
 
-
-
 uint64 strlen(string str) {
     uint64 length = 0;
     while((*(char*)str) != 0){
@@ -10,8 +8,4 @@ uint64 strlen(string str) {
     }
     return length;
 }
-
-
-
-
 

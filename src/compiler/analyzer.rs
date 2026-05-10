@@ -294,6 +294,89 @@ impl Analyzer {
         }
     }
 
+    fn is_array_type(&self, t: &TypeName) -> bool {
+        matches!(t, TypeName::Array(_, _))
+    }    
+    fn array_element_type(&self, t: &TypeName) -> Option<TypeName> {
+        match t {
+            TypeName::Array(elem, _) => Some((**elem).clone()),
+            _ => None,
+        }
+    }
+    fn contains_array_type(&self, t: &TypeName) -> bool {
+        match t {
+            TypeName::Array(_, _) => true,
+    
+            TypeName::Pointer(inner) => {
+                self.contains_array_type(inner)
+            }
+    
+            TypeName::Function { ret, params } => {
+                self.contains_array_type(ret)
+                    || params.iter().any(|p| self.contains_array_type(p))
+            }
+    
+            _ => false,
+        }
+    }
+
+    fn validate_storage_type(&self, t: &TypeName, context: &str) -> Result<(), String> {
+        let ERROR_STRING_ROOT = "velc:Analyzer:validate_storage_type";
+    
+        match t {
+            TypeName::Builtin(BuiltinType::Void) => {
+                self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("{} cannot have type void", context),
+                )
+            }
+    
+            TypeName::Array(elem, size) => {
+                if *size == 0 {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        &format!("{} cannot have zero-sized array type", context),
+                    );
+                }
+    
+                match elem.as_ref() {
+                    TypeName::Builtin(BuiltinType::Void) => {
+                        return self.error(
+                            ERROR_STRING_ROOT,
+                            &format!("{} cannot be an array of void", context),
+                        );
+                    }
+    
+                    TypeName::Function { .. } => {
+                        return self.error(
+                            ERROR_STRING_ROOT,
+                            &format!("{} cannot be an array of function values", context),
+                        );
+                    }
+    
+                    _ => {}
+                }
+    
+                self.validate_storage_type(elem, context)
+            }
+    
+            TypeName::Function { .. } => {
+                self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("{} cannot have bare function type", context),
+                )
+            }
+    
+            TypeName::IntLiteral | TypeName::FloatLiteral => {
+                self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("{} cannot have literal pseudo-type", context),
+                )
+            }
+    
+            _ => Ok(()),
+        }
+    }
 
 
     fn is_assignable_expr(&self, expr: &Expr) -> bool {
@@ -315,6 +398,12 @@ impl Analyzer {
         }
     }
     fn is_condition_type(&self, Type: &TypeName) -> bool {
+
+        if self.is_array_type(Type) {
+            return false;
+        }
+
+
         self.is_bool_type(Type)
             || self.is_integer_type(Type)
             || self.is_float_type(Type)
@@ -368,6 +457,11 @@ impl Analyzer {
     }
     
     fn can_assign(&self, target: &TypeName, value: &TypeName) -> bool {
+
+        if self.is_array_type(target) || self.is_array_type(value) {
+            return false;
+        }
+
         if target == value {
             return true;
         }
@@ -408,97 +502,103 @@ impl Analyzer {
         false
     }
     fn can_cast(&self, target: &TypeName, source: &TypeName) -> bool {
-    if target == source {
-        return true;
+
+        if self.is_array_type(target) || self.is_array_type(source) {
+            return false;
+        }
+
+        if target == source {
+            return true;
+        }
+
+        if self.is_void_type(target) || self.is_void_type(source) {
+            return false;
+        }
+
+        // literal -> integer
+        if self.is_integer_type(target) && self.is_int_literal_type(source) {
+            return true;
+        }
+
+        if self.is_integer_type(target) && self.is_float_literal_type(source) {
+            return true;
+        }
+
+        // literal -> float
+        if self.is_float_type(target) && self.is_int_literal_type(source) {
+            return true;
+        }
+
+        if self.is_float_type(target) && self.is_float_literal_type(source) {
+            return true;
+        }
+
+        // concrete integer <-> concrete integer
+        if self.integer_width(target).is_some() && self.integer_width(source).is_some() {
+            return true;
+        }
+
+        // concrete float <-> concrete float
+        if self.float_width(target).is_some() && self.float_width(source).is_some() {
+            return true;
+        }
+
+        // concrete integer <-> concrete float
+        if self.integer_width(target).is_some() && self.float_width(source).is_some() {
+            return true;
+        }
+
+        if self.float_width(target).is_some() && self.integer_width(source).is_some() {
+            return true;
+        }
+
+        // pointer <-> pointer
+        if self.is_pointer_type(target) && self.is_pointer_type(source) {
+            return true;
+        }
+
+        // string <-> pointer
+        //
+        // string is backend-lowered as a pointer-sized value, but semantically it is
+        // still its own builtin type. So allow this only as an explicit cast.
+        if self.is_string_type(target) && self.is_pointer_type(source) {
+            return true;
+        }
+
+        if self.is_pointer_type(target) && self.is_string_type(source) {
+            return true;
+        }
+
+        // pointer <-> integer
+        if self.is_pointer_type(target) && self.integer_width(source).is_some() {
+            return true;
+        }
+
+        if self.integer_width(target).is_some() && self.is_pointer_type(source) {
+            return true;
+        }
+
+        // string <-> pointer
+        if self.is_string_type(target) && self.is_pointer_type(source) {
+            return true;
+        }
+
+        if self.is_pointer_type(target) && self.is_string_type(source) {
+            return true;
+        }
+
+        // string <-> integer
+        if self.is_string_type(target) && self.integer_width(source).is_some() {
+            return true;
+        }
+
+        if self.integer_width(target).is_some() && self.is_string_type(source) {
+            return true;
+        }
+
+        false
     }
 
-    if self.is_void_type(target) || self.is_void_type(source) {
-        return false;
-    }
-
-    // literal -> integer
-    if self.is_integer_type(target) && self.is_int_literal_type(source) {
-        return true;
-    }
-
-    if self.is_integer_type(target) && self.is_float_literal_type(source) {
-        return true;
-    }
-
-    // literal -> float
-    if self.is_float_type(target) && self.is_int_literal_type(source) {
-        return true;
-    }
-
-    if self.is_float_type(target) && self.is_float_literal_type(source) {
-        return true;
-    }
-
-    // concrete integer <-> concrete integer
-    if self.integer_width(target).is_some() && self.integer_width(source).is_some() {
-        return true;
-    }
-
-    // concrete float <-> concrete float
-    if self.float_width(target).is_some() && self.float_width(source).is_some() {
-        return true;
-    }
-
-    // concrete integer <-> concrete float
-    if self.integer_width(target).is_some() && self.float_width(source).is_some() {
-        return true;
-    }
-
-    if self.float_width(target).is_some() && self.integer_width(source).is_some() {
-        return true;
-    }
-
-    // pointer <-> pointer
-    if self.is_pointer_type(target) && self.is_pointer_type(source) {
-        return true;
-    }
-
-    // string <-> pointer
-    //
-    // string is backend-lowered as a pointer-sized value, but semantically it is
-    // still its own builtin type. So allow this only as an explicit cast.
-    if self.is_string_type(target) && self.is_pointer_type(source) {
-        return true;
-    }
-
-    if self.is_pointer_type(target) && self.is_string_type(source) {
-        return true;
-    }
-
-    // pointer <-> integer
-    if self.is_pointer_type(target) && self.integer_width(source).is_some() {
-        return true;
-    }
-
-    if self.integer_width(target).is_some() && self.is_pointer_type(source) {
-        return true;
-    }
-
-    // string <-> pointer
-    if self.is_string_type(target) && self.is_pointer_type(source) {
-        return true;
-    }
-
-    if self.is_pointer_type(target) && self.is_string_type(source) {
-        return true;
-    }
-
-    // string <-> integer
-    if self.is_string_type(target) && self.integer_width(source).is_some() {
-        return true;
-    }
-
-    if self.integer_width(target).is_some() && self.is_string_type(source) {
-        return true;
-    }
-
-    false
-}
 
     fn enter_loop(&mut self) {
         self.loop_depth += 1;
@@ -544,6 +644,21 @@ impl Analyzer {
             );
         }
     
+        if self.is_array_type(&func.ret) {
+            return self.error(
+                ERROR_STRING_ROOT,
+                "Function cannot return array type",
+            );
+        }
+
+        if matches!(func.ret, TypeName::Function { .. }) {
+            return self.error(
+                ERROR_STRING_ROOT,
+                "Function cannot return bare function type",
+            );
+        }
+
+
         let mut params = Vec::new();
     
         for param in &func.params {
@@ -557,6 +672,15 @@ impl Analyzer {
                     ),
                 );
             }
+
+            if self.is_array_type(&param.Type) {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    "Array parameters are not implemented yet; use a pointer parameter",
+                );
+            }
+
+            self.validate_storage_type(&param.Type, "Function parameter")?;
     
             params.push(param.Type.clone());
         }
@@ -581,12 +705,10 @@ impl Analyzer {
             );
         }
 
-        if self.is_void_type(&var.Type) {
-            return self.error(
-                ERROR_STRING_ROOT,
-                &format!("Global variable '{}' cannot have void type", var.name),
-            );
-        }
+        self.validate_storage_type(
+            &var.Type,
+            &format!("Global variable '{}'", var.name),
+        )?;
 
         self.globals.insert(
             var.name.clone(),
@@ -634,6 +756,12 @@ impl Analyzer {
                     ),
                 );
             }
+            if matches!(param.Type, TypeName::Array(_, _)) {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    "Array parameters are not implemented yet; use a pointer parameter",
+                );
+            }
     
             if let Err(err) = self.declare_local(&param.name, param.Type.clone()) {
                 self.pop_scope();
@@ -652,19 +780,27 @@ impl Analyzer {
     fn analyze_global_var(&mut self, var: &VarDecl) -> Result<(), String> {
         let ERROR_STRING_ROOT = "velc:Analyzer:analyze_global_var";
     
-        if self.is_void_type(&var.Type) {
-            return self.error(
-                ERROR_STRING_ROOT,
-                &format!("Global variable '{}' cannot have type void", var.name),
-            );
+        self.validate_storage_type(&var.Type, "Global variable")?;
+
+        if self.is_array_type(&var.Type) {
+            if var.init.is_some() {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    "Global array initializers are not implemented yet",
+                );
+            }
+    
+            return Ok(());
         }
+
+
     
         if let Some(init) = &var.init {
             if !self.is_static_global_initializer(init) {
                 return self.error(
                     ERROR_STRING_ROOT,
                     &format!(
-                        "Global variable '{}' initializer must be static and contain no computation",
+                        "Global variable '{}' initializer must be static",
                         var.name
                     ),
                 );
@@ -672,6 +808,14 @@ impl Analyzer {
     
             let init_type = self.analyze_expr(init)?;
     
+
+            if self.is_array_type(&init_type) {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    "Cannot initialize global variable from array value",
+                );
+            }
+
             if !self.can_assign(&var.Type, &init_type) {
                 return self.error(
                     ERROR_STRING_ROOT,
@@ -746,16 +890,30 @@ impl Analyzer {
             }
 
             Stmt::VarDecl(var) => {
-                if self.is_void_type(&var.Type) {
-                    return self.error(
-                        ERROR_STRING_ROOT,
-                        &format!("Variable '{}' cannot have type void", var.name),
-                    );
+                self.validate_storage_type(&var.Type, "Local variable")?;
+
+                if self.is_array_type(&var.Type) {
+                    if var.init.is_some() {
+                        return self.error(
+                            ERROR_STRING_ROOT,
+                            "Array initializers are not implemented yet",
+                        );
+                    }
+            
+                    self.declare_local(&var.name, var.Type.clone())?;
+                    return Ok(());
                 }
     
                 if let Some(init) = &var.init {
                     let init_type = self.analyze_expr(init)?;
     
+                    if self.is_array_type(&init_type) {
+                        return self.error(
+                            ERROR_STRING_ROOT,
+                            "Cannot initialize variable from array value",
+                        );
+                    }
+
                     if !self.can_assign(&var.Type, &init_type) {
                         return self.error(
                             ERROR_STRING_ROOT,
@@ -1291,13 +1449,28 @@ impl Analyzer {
             }
     
             Expr::Assign { left, op, right } => {
-                let left_type = self.analyze_expr(left)?;
-                let right_type = self.analyze_expr(right)?;
-    
                 if !self.is_assignable_expr(left) {
                     return self.error(
                         ERROR_STRING_ROOT,
                         "Invalid assignment target",
+                    );
+                }
+
+                let left_type = self.analyze_expr(left)?;
+
+                if self.is_array_type(&left_type) {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        "Cannot assign to whole array value",
+                    );
+                }
+
+                let right_type = self.analyze_expr(right)?;
+
+                if self.is_array_type(&right_type) {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        "Cannot assign array value",
                     );
                 }
     

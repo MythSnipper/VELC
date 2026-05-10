@@ -540,22 +540,25 @@ impl Parser {
         let ERROR_STRING_ROOT = "velc:Parser:parse_global_var_decl";
         
         let init = if self.matches(&TokenType::Assign) {
+            if matches!(t, TypeName::Array(_, _)) {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    "Global array initializers are not implemented yet",
+                );
+            }
+
             Some(self.parse_expr()?)
         }
         else {
             None
         };
     
-        if !self.matches(&TokenType::Semicolon) {
-            self.error(ERROR_STRING_ROOT, "Expected semicolon")
-        }
-        else {
-            Ok(TopLevel::GlobalVar(VarDecl {
-                Type: t,
-                name: id,
-                init: init,
-            }))
-        }
+        self.expect(&TokenType::Semicolon)?;
+        Ok(TopLevel::GlobalVar(VarDecl {
+            Type: t,
+            name: id,
+            init: init,
+        }))
     }
 
     fn parse_block(&mut self) -> Result<Stmt, String> {
@@ -783,7 +786,7 @@ impl Parser {
 
     }
     fn parse_for_stmt(&mut self) -> Result<Stmt, String> {
-
+        let ERROR_STRING_ROOT = "velc:Parser:parse_for_stmt";
         self.expect(&TokenType::For_Keyword)?;
 
         self.expect(&TokenType::Lparen)?;
@@ -792,10 +795,16 @@ impl Parser {
             None
         }
         else if self.is_type_keyword() {
-            let t = self.parse_type()?;
-            let id = self.consume_identifier()?;
+            let base = self.parse_type()?;
+            let (name, full_type) = self.parse_decl_name_and_type(base)?;
 
             let init = if self.matches(&TokenType::Assign) {
+                if matches!(full_type, TypeName::Array(_, _)) {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        "Array initializers are not implemented yet",
+                    );
+                }
                 Some(self.parse_expr()?)
             }
             else {
@@ -803,8 +812,8 @@ impl Parser {
             };
 
             Some(ForInit::VarDecl(VarDecl {
-                Type: t,
-                name: id,
+                Type: full_type,
+                name: name,
                 init: init
             }))
         }
