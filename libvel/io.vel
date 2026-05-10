@@ -17,10 +17,21 @@ void println(string str) {
 }
 
 void print_uint64(uint64 num) {
-    if (num >= 10) {
-        print_uint64(num / 10);
+    char buf[20];
+    uint64 i = 20;
+
+    if(num == 0) {
+        print_char('0');
+        return;
     }
-    print_char((char)((num % 10) + '0'));
+
+    while(num > 0) {
+        i--;
+        buf[i] = (char)((num % 10) + '0');
+        num = num / 10;
+    }
+
+    sys_write(1, &buf[i], 20 - i);
 }
 
 void print_int64(int64 num) {
@@ -35,34 +46,42 @@ void print_int64(int64 num) {
 
 void print_bool(bool value) {
     if(value) {
-        print("true");
+        sys_write(1, (char*)"true", 4);
     }
     else {
-        print("false");
+        sys_write(1, (char*)"false", 5);
     }
 }
 
-
-void __io_print_hex_digit(uint64 digit) {
-    if(digit < 10) {
-        print_char((char)(digit + '0'));
-    }
-    else {
-        print_char((char)((digit - 10) + 'a'));
-    }
-}
-void __io_print_hex_uint64_inner(uint64 value) {
-    if(value >= 16) {
-        __io_print_hex_uint64_inner(value / 16);
-    }
-    __io_print_hex_digit(value % 16);
-}
 
 void print_hex(uint64 value) {
-    print("0x");
-    __io_print_hex_uint64_inner(value);
-}
+    char buf[16];
+    uint64 i = 16;
 
+    print("0x");
+
+    if(value == 0) {
+        print_char('0');
+        return;
+    }
+
+    while(value > 0) {
+        i--;
+
+        uint64 digit = value % 16;
+
+        if(digit < 10) {
+            buf[i] = (char)(digit + '0');
+        }
+        else {
+            buf[i] = (char)((digit - 10) + 'a');
+        }
+
+        value = value / 16;
+    }
+
+    sys_write(1, &buf[i], 16 - i);
+}
 
 
 

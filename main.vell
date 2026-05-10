@@ -1,0 +1,276 @@
+
+
+
+
+int64 sys_read(uint64 fd, char* buf, uint64 count) {
+    int64 ret = 0;
+    %{
+        mov rax, 0 ; syscall: read
+        syscall
+    }$ in(fd -> rdi, buf -> rsi, count -> rdx)
+    out(rax -> ret)%
+    
+    return ret;
+}
+
+int64 sys_write(uint64 fd, char* buf, uint64 count) {
+    int64 ret = 0;
+    %{
+        mov rax, 1 ; syscall: write
+        syscall
+    }$ in(fd -> rdi, buf -> rsi, count -> rdx)
+    out(rax -> ret)%
+
+    return ret;
+}
+
+void sys_exit(uint64 exit_code) {
+    %{
+        mov rax, 0x3c
+        syscall
+    }$ in(exit_code -> rdi)%
+}
+
+
+
+uint64 cpu_rdseed() {
+    uint64 a = 0;
+    %{
+        xor rax, rax
+        rdseed rax
+    }$ out(rax -> a)%
+
+    return a;
+}
+
+uint64 cpu_rdrand() {
+    uint64 a = 0;
+    %{
+        xor rax, rax
+        rdrand rax
+    }$ out(rax -> a)%
+
+    return a;
+}
+
+
+uint64 strlen(string str) {
+    uint64 length = 0;
+    while((*(char*)str) != 0){
+        length++;
+        str = (string)((uint64)str + 1);
+    }
+    return length;
+}
+
+
+//print functions
+void print_char(char out) {
+    sys_write(1, &out, 1); //write 1 char to stdout
+}
+
+void print(string str) {
+    sys_write(1, (char*)str, strlen(str)); //write string to stdout
+}
+
+void println(string str) {
+    print(str);
+    print_char('\n');
+}
+
+void print_uint64(uint64 num) {
+    char buf[20];
+    uint64 i = 20;
+
+    if(num == 0) {
+        print_char('0');
+        return;
+    }
+
+    while(num > 0) {
+        i--;
+        buf[i] = (char)((num % 10) + '0');
+        num = num / 10;
+    }
+
+    sys_write(1, &buf[i], 20 - i);
+}
+
+void print_int64(int64 num) {
+    if(num < 0) {
+        print_char('-');
+        print_uint64((uint64)(0-num));
+    }
+    else{
+        print_uint64((uint64)num);
+    }
+}
+
+void print_bool(bool value) {
+    if(value) {
+        sys_write(1, (char*)"true", 4);
+    }
+    else {
+        sys_write(1, (char*)"false", 5);
+    }
+}
+
+
+void print_hex(uint64 value) {
+    char buf[16];
+    uint64 i = 16;
+
+    print("0x");
+
+    if(value == 0) {
+        print_char('0');
+        return;
+    }
+
+    while(value > 0) {
+        i--;
+
+        uint64 digit = value % 16;
+
+        if(digit < 10) {
+            buf[i] = (char)(digit + '0');
+        }
+        else {
+            buf[i] = (char)((digit - 10) + 'a');
+        }
+
+        value = value / 16;
+    }
+
+    sys_write(1, &buf[i], 16 - i);
+}
+
+
+
+
+
+
+
+
+
+uint64 __random_rand_state = 67676767;
+
+//seed the pseudo-random number generator
+void srand(uint64 seed) {
+    if(seed == 0) {
+        seed = 67676767;
+    }
+
+    __random_rand_state = seed;
+
+    for(int32 i=0;i<10;i++) {
+        rand64();
+    }
+}
+
+//seed the pseudo-random number generator using rdrand
+void srand_hw() {
+    __random_rand_state = cpu_rdrand();
+
+    for(int32 i=0;i<10;i++) {
+        rand64();
+    }
+}
+
+//returns a random 64 bit number
+uint64 rand64() {
+    uint64 x = __random_rand_state;
+
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+
+    __random_rand_state = x;
+
+    return x;
+}
+
+//generates a random number in [min, max]
+uint64 rand_range(uint64 min, uint64 max) {
+    uint64 diff = max - min + 1;
+    uint64 result = rand64() % diff + min;
+    return result;
+}
+
+
+
+
+
+
+
+
+
+
+uint64 main() {
+
+    uint64 counter = 1;
+    while(counter < 12345678){
+        print_meow_uint64_line(counter);
+        counter++;
+    }
+
+    return 0;
+}
+ 
+
+void print_meow_uint64_line(uint64 num) {
+    char buf[32];
+    uint64 i = 0;
+
+    buf[i] = 'm'; i++;
+    buf[i] = 'e'; i++;
+    buf[i] = 'o'; i++;
+    buf[i] = 'w'; i++;
+    buf[i] = ' '; i++;
+
+    char digits[20];
+    uint64 d = 20;
+
+    if(num == 0) {
+        buf[i] = '0';
+        i++;
+    }
+    else {
+        while(num > 0) {
+            d--;
+            digits[d] = (char)((num % 10) + '0');
+            num = num / 10;
+        }
+
+        while(d < 20) {
+            buf[i] = digits[d];
+            i++;
+            d++;
+        }
+    }
+
+    buf[i] = '\n';
+    i++;
+
+    sys_write(1, &buf[0], i);
+}
+
+
+void test() {
+    println("a");
+    print("Enter: ");
+
+    char buf = 0;
+
+    int64 n = -1;
+    
+    while(n <= 0) {
+        n = sys_read(0, &buf, 1);
+    }
+    print_char(buf);
+    println("");
+}
+
+
+
+
