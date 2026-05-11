@@ -1,16 +1,17 @@
 #once
-#include:sys.vel
-#include:string.vel
 
 //print functions
 void print_char(char out) {
     sys_write(1, &out, 1); //write 1 char to stdout
 }
+void print_char_ln(char out) {
+    print_char(out);
+    print_char('\n');
+}
 
 void print(string str) {
     sys_write(1, (char*)str, strlen(str)); //write string to stdout
 }
-
 void println(string str) {
     print(str);
     print_char('\n');
@@ -33,6 +34,10 @@ void print_uint64(uint64 num) {
 
     sys_write(1, &buf[i], 20 - i);
 }
+void print_uint64_ln(uint64 num) {
+    print_uint64(num);
+    print_char('\n');
+}
 
 void print_int64(int64 num) {
     if(num < 0) {
@@ -43,6 +48,10 @@ void print_int64(int64 num) {
         print_uint64((uint64)num);
     }
 }
+void print_int64_ln(int64 num) {
+    print_int64(num);
+    print_char('\n');
+}
 
 void print_bool(bool value) {
     if(value) {
@@ -52,13 +61,17 @@ void print_bool(bool value) {
         sys_write(1, (char*)"false", 5);
     }
 }
+void print_bool_ln(bool value) {
+    print_bool(value);
+    print_char('\n');
+}
 
 
 void print_hex(uint64 value) {
     char buf[16];
     uint64 i = 16;
 
-    print("0x");
+    sys_write(1, (char*)"0x", 2);
 
     if(value == 0) {
         print_char('0');
@@ -82,9 +95,25 @@ void print_hex(uint64 value) {
 
     sys_write(1, &buf[i], 16 - i);
 }
+void print_hex_ln(uint64 value) {
+    print_hex(value);
+    print_char('\n');
+}
 
+int64 input(char* buf, uint64 buf_size) {
+    int64 n = sys_read(0, buf, buf_size - 1); //reserve for null terminator
 
+    if(n <= 0) {
+        return n;
+    }
 
+    //remove newline
+    if(buf[(uint64)n - 1] == '\n') {
+        buf[(uint64)n - 1] = 0;
+        return n - 1;
+    }
 
+    buf[(uint64)n] = 0; //put null terminator at end of string
 
-
+    return n;
+}

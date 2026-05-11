@@ -1,70 +1,21 @@
 #include:stdlib.vel
 
-uint64 main() {
+#define INPUT_BUFFER_SIZE 1024
+char buf[INPUT_BUFFER_SIZE];
 
-    uint64 counter = 1;
-    while(counter < 12345678){
-        print_meow_uint64_line(counter);
-        counter++;
-    }
+uint64 main() {
+    
+
+
+
+
+
+
+
+
 
     return 0;
 }
- 
-
-void print_meow_uint64_line(uint64 num) {
-    char buf[32];
-    uint64 i = 0;
-
-    buf[i] = 'm'; i++;
-    buf[i] = 'e'; i++;
-    buf[i] = 'o'; i++;
-    buf[i] = 'w'; i++;
-    buf[i] = ' '; i++;
-
-    char digits[20];
-    uint64 d = 20;
-
-    if(num == 0) {
-        buf[i] = '0';
-        i++;
-    }
-    else {
-        while(num > 0) {
-            d--;
-            digits[d] = (char)((num % 10) + '0');
-            num = num / 10;
-        }
-
-        while(d < 20) {
-            buf[i] = digits[d];
-            i++;
-            d++;
-        }
-    }
-
-    buf[i] = '\n';
-    i++;
-
-    sys_write(1, &buf[0], i);
-}
-
-
-void test() {
-    println("a");
-    print("Enter: ");
-
-    char buf = 0;
-
-    int64 n = -1;
-    
-    while(n <= 0) {
-        n = sys_read(0, &buf, 1);
-    }
-    print_char(buf);
-    println("");
-}
-
 
 
 
