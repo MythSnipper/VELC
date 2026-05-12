@@ -45,8 +45,3 @@ uint64 rand_range(uint64 min, uint64 max) {
 }
 
 
-
-
-
-
-

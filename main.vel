@@ -1,19 +1,13 @@
-#include:stdlib.vel
+#include:*.vel
 
 #define INPUT_BUFFER_SIZE 1024
 char buf[INPUT_BUFFER_SIZE];
 
 uint64 main() {
+
+    print_float64_ln(sqrt(121.0));
+
     
-
-
-
-
-
-
-
-
-
     return 0;
 }
 

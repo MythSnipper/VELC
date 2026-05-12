@@ -158,15 +158,22 @@ impl CodeGenerator {
     
             TypeName::Builtin(BuiltinType::Int32) => Sign::Signed,
             TypeName::Builtin(BuiltinType::Uint32) => Sign::Unsigned,
-            TypeName::Builtin(BuiltinType::Float32) => Sign::Signed,
-    
+
             TypeName::Builtin(BuiltinType::Int64) => Sign::Signed,
             TypeName::Builtin(BuiltinType::Uint64) => Sign::Unsigned,
-            TypeName::Builtin(BuiltinType::Float64) => Sign::Signed,
-    
+
             TypeName::Builtin(BuiltinType::String) => Sign::Unsigned, // pointer
             TypeName::Pointer(_) => Sign::Unsigned,
             
+            TypeName::Builtin(BuiltinType::Float32)
+            | TypeName::Builtin(BuiltinType::Float64)
+            | TypeName::FloatLiteral => {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("Float type has no integer sign: {:?}", Type),
+                );
+            }
+
             TypeName::Array(_, _) => {
                 return self.error(
                     ERROR_STRING_ROOT,
@@ -174,7 +181,26 @@ impl CodeGenerator {
                 );
             }
 
-            _ => return self.error(ERROR_STRING_ROOT, &format!("Unsupported global type size for {:?}", Type)),
+            TypeName::Function { .. } => {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("Function type has no sign: {:?}", Type),
+                );
+            }
+
+            TypeName::Builtin(BuiltinType::Void) => {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    "Void type has no sign",
+                );
+            }
+
+            TypeName::IntLiteral => {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    "IntLiteral pseudo-type has no backend sign",
+                );
+            }
         };
         Ok(ret)
     }
@@ -302,7 +328,7 @@ impl CodeGenerator {
         parts.push("0".to_string()); // null terminator
         parts.join(", ")
     }
-    fn emit_static_initializer_value(&mut self, expr: &Expr) -> Result<String, String> {
+    fn emit_static_initializer_value(&mut self, target_type: &TypeName, expr: &Expr) -> Result<String, String> {
         let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_static_initializer_value";
     
         match expr {
@@ -311,11 +337,46 @@ impl CodeGenerator {
             }
     
             Expr::IntLiteral(v) => {
-                Ok(v.to_string())
+                match target_type {
+                    TypeName::Builtin(BuiltinType::Float32) => {
+                        let bits = (*v as f32).to_bits();
+                        Ok(format!("0x{:08x}", bits))
+                    }
+
+                    TypeName::Builtin(BuiltinType::Float64) => {
+                        let bits = (*v as f64).to_bits();
+                        Ok(format!("0x{:016x}", bits))
+                    }
+
+                    _ => {
+                        Ok(v.to_string())
+                    }
+                }
             }
     
+            
             Expr::FloatLiteral(v) => {
-                Ok(v.to_string())
+                match target_type {
+                    TypeName::Builtin(BuiltinType::Float32) => {
+                        let bits = (*v as f32).to_bits();
+                        Ok(format!("0x{:08x}", bits))
+                    }
+
+                    TypeName::Builtin(BuiltinType::Float64) => {
+                        let bits = v.to_bits();
+                        Ok(format!("0x{:016x}", bits))
+                    }
+
+                    _ => {
+                        self.error(
+                            ERROR_STRING_ROOT,
+                            &format!(
+                                "Float literal cannot initialize non-float static type {:?}",
+                                target_type
+                            ),
+                        )
+                    }
+                }
             }
     
             Expr::CharLiteral(c) => {
@@ -329,8 +390,8 @@ impl CodeGenerator {
                 Ok(label)
             }
     
-            Expr::Cast { expr, .. } => {
-                self.emit_static_initializer_value(expr)
+            Expr::Cast {Type, expr} => {
+                self.emit_static_initializer_value(Type, expr)
             }
     
             Expr::Identifier(name) => {
@@ -675,36 +736,77 @@ impl CodeGenerator {
     
     fn emit_load_value_at_rax(&mut self, t: &TypeName, comment: &str) -> Result<(), String> {
         let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_load_value_at_rax";
-    
+
         if matches!(t, TypeName::Array(_, _)) {
             return self.error(
                 ERROR_STRING_ROOT,
                 &format!("Cannot load array value directly: {:?}", t),
             );
         }
-    
+
+        match t {
+            TypeName::Builtin(BuiltinType::Float32) => {
+                self.push_section(
+                    "text",
+                    &format!("    mov eax, dword [rax] ; {} float32 raw bits", comment),
+                )?;
+                return Ok(());
+            }
+
+            TypeName::Builtin(BuiltinType::Float64) => {
+                self.push_section(
+                    "text",
+                    &format!("    mov rax, qword [rax] ; {} float64 raw bits", comment),
+                )?;
+                return Ok(());
+            }
+
+            _ => {}
+        }
+
         let size = self.type_size(t)?;
-    
+
         match size {
             1 => match self.type_sign(t)? {
-                Sign::Unsigned => self.push_section("text", &format!("    movzx rax, byte [rax] ; {}", comment))?,
-                Sign::Signed => self.push_section("text", &format!("    movsx rax, byte [rax] ; {}", comment))?,
+                Sign::Unsigned => self.push_section(
+                    "text",
+                    &format!("    movzx rax, byte [rax] ; {}", comment),
+                )?,
+                Sign::Signed => self.push_section(
+                    "text",
+                    &format!("    movsx rax, byte [rax] ; {}", comment),
+                )?,
             },
-    
+
             2 => match self.type_sign(t)? {
-                Sign::Unsigned => self.push_section("text", &format!("    movzx rax, word [rax] ; {}", comment))?,
-                Sign::Signed => self.push_section("text", &format!("    movsx rax, word [rax] ; {}", comment))?,
+                Sign::Unsigned => self.push_section(
+                    "text",
+                    &format!("    movzx rax, word [rax] ; {}", comment),
+                )?,
+                Sign::Signed => self.push_section(
+                    "text",
+                    &format!("    movsx rax, word [rax] ; {}", comment),
+                )?,
             },
-    
+
             4 => match self.type_sign(t)? {
-                Sign::Unsigned => self.push_section("text", &format!("    mov eax, dword [rax] ; {}", comment))?,
-                Sign::Signed => self.push_section("text", &format!("    movsxd rax, dword [rax] ; {}", comment))?,
+                Sign::Unsigned => self.push_section(
+                    "text",
+                    &format!("    mov eax, dword [rax] ; {}", comment),
+                )?,
+                Sign::Signed => self.push_section(
+                    "text",
+                    &format!("    movsxd rax, dword [rax] ; {}", comment),
+                )?,
             },
-    
+
             8 => {
-                self.push_section("text", &format!("    mov rax, qword [rax] ; {}", comment))?;
+                self.push_section(
+                    "text",
+                    &format!("    mov rax, qword [rax] ; {}", comment),
+                )?;
             }
-    
+
             _ => {
                 return self.error(
                     ERROR_STRING_ROOT,
@@ -712,7 +814,7 @@ impl CodeGenerator {
                 );
             }
         }
-    
+
         Ok(())
     }
     fn emit_index_base_addr(&mut self, base: &Expr) -> Result<TypeName, String> {
@@ -781,7 +883,565 @@ impl CodeGenerator {
     }
 
 
+    //for emit_var and exprs
+    fn emit_expr_as_type(&mut self, target_type: &TypeName, expr: &Expr) -> Result<TypeName, String> {
+        match (target_type, expr) {
+            (
+                TypeName::Builtin(BuiltinType::Float32),
+                Expr::FloatLiteral(v),
+            ) => {
+                self.emit_float_literal_as_type(target_type, *v)
+            }
 
+            (
+                TypeName::Builtin(BuiltinType::Float64),
+                Expr::FloatLiteral(v),
+            ) => {
+                self.emit_float_literal_as_type(target_type, *v)
+            }
+
+            (
+                TypeName::Builtin(BuiltinType::Float32)
+                    | TypeName::Builtin(BuiltinType::Float64),
+                Expr::Grouping(inner),
+            ) => {
+                self.emit_expr_as_type(target_type, inner)
+            }
+
+            (
+                TypeName::Builtin(BuiltinType::Float32)
+                    | TypeName::Builtin(BuiltinType::Float64),
+                Expr::Prefix {
+                    op: PrefixOp::Plus,
+                    expr,
+                },
+            ) => {
+                self.emit_expr_as_type(target_type, expr)
+            }
+
+            (
+                TypeName::Builtin(BuiltinType::Float32)
+                    | TypeName::Builtin(BuiltinType::Float64),
+                Expr::Prefix {
+                    op: PrefixOp::Neg,
+                    expr,
+                },
+            ) => {
+                let got = self.emit_expr_as_type(target_type, expr)?;
+
+                self.push_section("text", "    pop rax ; target-aware float unary neg")?;
+
+                match got {
+                    TypeName::Builtin(BuiltinType::Float64) => {
+                        self.push_section("text", "    movq xmm0, rax ; float64 neg source")?;
+                        self.push_section("text", "    pxor xmm1, xmm1 ; 0.0")?;
+                        self.push_section("text", "    subsd xmm1, xmm0 ; 0.0 - x")?;
+                        self.push_section("text", "    movq rax, xmm1 ; float64 neg result")?;
+                    }
+
+                    TypeName::Builtin(BuiltinType::Float32) => {
+                        self.push_section("text", "    movd xmm0, eax ; float32 neg source")?;
+                        self.push_section("text", "    pxor xmm1, xmm1 ; 0.0")?;
+                        self.push_section("text", "    subss xmm1, xmm0 ; 0.0 - x")?;
+                        self.push_section("text", "    movd eax, xmm1 ; float32 neg result")?;
+                    }
+
+                    other => {
+                        return self.error(
+                            "velc:CodeGenerator:emit_expr_as_type",
+                            &format!("Expected float type after target-aware neg, got {:?}", other),
+                        );
+                    }
+                }
+
+                self.push_section("text", "    push rax ; target-aware float neg result")?;
+
+                Ok(got)
+            }
+
+            (
+                TypeName::Builtin(BuiltinType::Float32)
+                    | TypeName::Builtin(BuiltinType::Float64),
+                Expr::Binary { left, op, right },
+            ) => {
+                self.emit_float_binary_as_type(target_type, left, op, right)
+            }
+
+            _ => {
+                self.emit_expr(expr)
+            }
+        }
+    }
+    fn is_float_type(&self, t: &TypeName) -> bool {
+        matches!(
+            t,
+            TypeName::Builtin(BuiltinType::Float32)
+                | TypeName::Builtin(BuiltinType::Float64)
+        )
+    }
+
+    fn is_float32_type(&self, t: &TypeName) -> bool {
+        matches!(t, TypeName::Builtin(BuiltinType::Float32))
+    }
+
+    fn is_float64_type(&self, t: &TypeName) -> bool {
+        matches!(t, TypeName::Builtin(BuiltinType::Float64))
+    }
+
+    fn emit_float_literal_as_type(&mut self, target_type: &TypeName, v: f64) -> Result<TypeName, String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_float_literal_as_type";
+
+        match target_type {
+            TypeName::Builtin(BuiltinType::Float32) => {
+                let bits = (v as f32).to_bits();
+
+                self.push_section(
+                    "text",
+                    &format!("    mov eax, 0x{:08x} ; float32 literal {}", bits, v),
+                )?;
+
+                self.push_section("text", "    push rax ; float32 literal bits")?;
+
+                Ok(TypeName::Builtin(BuiltinType::Float32))
+            }
+
+            TypeName::Builtin(BuiltinType::Float64) => {
+                let bits = v.to_bits();
+
+                self.push_section(
+                    "text",
+                    &format!("    mov rax, 0x{:016x} ; float64 literal {}", bits, v),
+                )?;
+
+                self.push_section("text", "    push rax ; float64 literal bits")?;
+
+                Ok(TypeName::Builtin(BuiltinType::Float64))
+            }
+
+            _ => {
+                self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("Expected float target type, got {:?}", target_type),
+                )
+            }
+        }
+    }
+    fn emit_float_binary_as_type(&mut self, float_type: &TypeName, left: &Box<Expr>, op: &BinaryOp, right: &Box<Expr>) -> Result<TypeName, String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_float_binary_as_type";
+
+        if !self.is_float_type(float_type) {
+            return self.error(
+                ERROR_STRING_ROOT,
+                &format!("Expected float type, got {:?}", float_type),
+            );
+        }
+
+        self.emit_expr_as_type(float_type, left)?;
+        self.emit_expr_as_type(float_type, right)?;
+
+        self.push_section("text", "    pop rcx ; float binary right bits")?;
+        self.push_section("text", "    pop rax ; float binary left bits")?;
+
+        match float_type {
+            TypeName::Builtin(BuiltinType::Float64) => {
+                self.push_section("text", "    movq xmm0, rax ; float64 left")?;
+                self.push_section("text", "    movq xmm1, rcx ; float64 right")?;
+
+                match op {
+                    BinaryOp::Add => self.push_section("text", "    addsd xmm0, xmm1")?,
+                    BinaryOp::Sub => self.push_section("text", "    subsd xmm0, xmm1")?,
+                    BinaryOp::Mul => self.push_section("text", "    mulsd xmm0, xmm1")?,
+                    BinaryOp::Div => self.push_section("text", "    divsd xmm0, xmm1")?,
+
+                    BinaryOp::Eq
+                    | BinaryOp::Neq
+                    | BinaryOp::Lt
+                    | BinaryOp::Gt
+                    | BinaryOp::Lte
+                    | BinaryOp::Gte => {
+                        self.push_section("text", "    ucomisd xmm0, xmm1")?;
+
+                        match op {
+                            BinaryOp::Eq => self.push_section("text", "    sete al")?,
+                            BinaryOp::Neq => self.push_section("text", "    setne al")?,
+                            BinaryOp::Lt => self.push_section("text", "    setb al")?,
+                            BinaryOp::Gt => self.push_section("text", "    seta al")?,
+                            BinaryOp::Lte => self.push_section("text", "    setbe al")?,
+                            BinaryOp::Gte => self.push_section("text", "    setae al")?,
+                            _ => unreachable!(),
+                        }
+
+                        self.push_section("text", "    movzx rax, al")?;
+                        self.push_section("text", "    push rax ; float comparison result")?;
+
+                        return Ok(TypeName::Builtin(BuiltinType::Bool));
+                    }
+
+                    _ => {
+                        return self.error(
+                            ERROR_STRING_ROOT,
+                            &format!("Unsupported float64 binary operator {:?}", op),
+                        );
+                    }
+                }
+
+                self.push_section("text", "    movq rax, xmm0 ; float64 result bits")?;
+                self.push_section("text", "    push rax ; float64 binary result")?;
+
+                Ok(TypeName::Builtin(BuiltinType::Float64))
+            }
+
+            TypeName::Builtin(BuiltinType::Float32) => {
+                self.push_section("text", "    movd xmm0, eax ; float32 left")?;
+                self.push_section("text", "    movd xmm1, ecx ; float32 right")?;
+
+                match op {
+                    BinaryOp::Add => self.push_section("text", "    addss xmm0, xmm1")?,
+                    BinaryOp::Sub => self.push_section("text", "    subss xmm0, xmm1")?,
+                    BinaryOp::Mul => self.push_section("text", "    mulss xmm0, xmm1")?,
+                    BinaryOp::Div => self.push_section("text", "    divss xmm0, xmm1")?,
+
+                    BinaryOp::Eq
+                    | BinaryOp::Neq
+                    | BinaryOp::Lt
+                    | BinaryOp::Gt
+                    | BinaryOp::Lte
+                    | BinaryOp::Gte => {
+                        self.push_section("text", "    ucomiss xmm0, xmm1")?;
+
+                        match op {
+                            BinaryOp::Eq => self.push_section("text", "    sete al")?,
+                            BinaryOp::Neq => self.push_section("text", "    setne al")?,
+                            BinaryOp::Lt => self.push_section("text", "    setb al")?,
+                            BinaryOp::Gt => self.push_section("text", "    seta al")?,
+                            BinaryOp::Lte => self.push_section("text", "    setbe al")?,
+                            BinaryOp::Gte => self.push_section("text", "    setae al")?,
+                            _ => unreachable!(),
+                        }
+
+                        self.push_section("text", "    movzx rax, al")?;
+                        self.push_section("text", "    push rax ; float comparison result")?;
+
+                        return Ok(TypeName::Builtin(BuiltinType::Bool));
+                    }
+
+                    _ => {
+                        return self.error(
+                            ERROR_STRING_ROOT,
+                            &format!("Unsupported float32 binary operator {:?}", op),
+                        );
+                    }
+                }
+
+                self.push_section("text", "    movd eax, xmm0 ; float32 result bits")?;
+                self.push_section("text", "    push rax ; float32 binary result")?;
+
+                Ok(TypeName::Builtin(BuiltinType::Float32))
+            }
+
+            _ => {
+                self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("Expected float type, got {:?}", float_type),
+                )
+            }
+        }
+    }
+    fn emit_float_binary_from_stack(&mut self, float_type: &TypeName, op: &BinaryOp) -> Result<TypeName, String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_float_binary_from_stack";
+
+        self.push_section("text", "    pop rcx ; float binary right bits")?;
+        self.push_section("text", "    pop rax ; float binary left bits")?;
+
+        match float_type {
+            TypeName::Builtin(BuiltinType::Float64) => {
+                self.push_section("text", "    movq xmm0, rax ; float64 left")?;
+                self.push_section("text", "    movq xmm1, rcx ; float64 right")?;
+
+                match op {
+                    BinaryOp::Add => self.push_section("text", "    addsd xmm0, xmm1")?,
+                    BinaryOp::Sub => self.push_section("text", "    subsd xmm0, xmm1")?,
+                    BinaryOp::Mul => self.push_section("text", "    mulsd xmm0, xmm1")?,
+                    BinaryOp::Div => self.push_section("text", "    divsd xmm0, xmm1")?,
+
+                    BinaryOp::Eq
+                    | BinaryOp::Neq
+                    | BinaryOp::Lt
+                    | BinaryOp::Gt
+                    | BinaryOp::Lte
+                    | BinaryOp::Gte => {
+                        self.push_section("text", "    ucomisd xmm0, xmm1")?;
+
+                        match op {
+                            BinaryOp::Eq => self.push_section("text", "    sete al")?,
+                            BinaryOp::Neq => self.push_section("text", "    setne al")?,
+                            BinaryOp::Lt => self.push_section("text", "    setb al")?,
+                            BinaryOp::Gt => self.push_section("text", "    seta al")?,
+                            BinaryOp::Lte => self.push_section("text", "    setbe al")?,
+                            BinaryOp::Gte => self.push_section("text", "    setae al")?,
+                            _ => unreachable!(),
+                        }
+
+                        self.push_section("text", "    movzx rax, al")?;
+                        self.push_section("text", "    push rax ; float comparison result")?;
+
+                        return Ok(TypeName::Builtin(BuiltinType::Bool));
+                    }
+
+                    _ => {
+                        return self.error(
+                            ERROR_STRING_ROOT,
+                            &format!("Unsupported float64 operator {:?}", op),
+                        );
+                    }
+                }
+
+                self.push_section("text", "    movq rax, xmm0 ; float64 result bits")?;
+                self.push_section("text", "    push rax ; float64 binary result")?;
+
+                Ok(TypeName::Builtin(BuiltinType::Float64))
+            }
+
+            TypeName::Builtin(BuiltinType::Float32) => {
+                self.push_section("text", "    movd xmm0, eax ; float32 left")?;
+                self.push_section("text", "    movd xmm1, ecx ; float32 right")?;
+
+                match op {
+                    BinaryOp::Add => self.push_section("text", "    addss xmm0, xmm1")?,
+                    BinaryOp::Sub => self.push_section("text", "    subss xmm0, xmm1")?,
+                    BinaryOp::Mul => self.push_section("text", "    mulss xmm0, xmm1")?,
+                    BinaryOp::Div => self.push_section("text", "    divss xmm0, xmm1")?,
+
+                    BinaryOp::Eq
+                    | BinaryOp::Neq
+                    | BinaryOp::Lt
+                    | BinaryOp::Gt
+                    | BinaryOp::Lte
+                    | BinaryOp::Gte => {
+                        self.push_section("text", "    ucomiss xmm0, xmm1")?;
+
+                        match op {
+                            BinaryOp::Eq => self.push_section("text", "    sete al")?,
+                            BinaryOp::Neq => self.push_section("text", "    setne al")?,
+                            BinaryOp::Lt => self.push_section("text", "    setb al")?,
+                            BinaryOp::Gt => self.push_section("text", "    seta al")?,
+                            BinaryOp::Lte => self.push_section("text", "    setbe al")?,
+                            BinaryOp::Gte => self.push_section("text", "    setae al")?,
+                            _ => unreachable!(),
+                        }
+
+                        self.push_section("text", "    movzx rax, al")?;
+                        self.push_section("text", "    push rax ; float comparison result")?;
+
+                        return Ok(TypeName::Builtin(BuiltinType::Bool));
+                    }
+
+                    _ => {
+                        return self.error(
+                            ERROR_STRING_ROOT,
+                            &format!("Unsupported float32 operator {:?}", op),
+                        );
+                    }
+                }
+
+                self.push_section("text", "    movd eax, xmm0 ; float32 result bits")?;
+                self.push_section("text", "    push rax ; float32 binary result")?;
+
+                Ok(TypeName::Builtin(BuiltinType::Float32))
+            }
+
+            _ => {
+                self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("Expected float type, got {:?}", float_type),
+                )
+            }
+        }
+    }
+    fn emit_float_compound_assign(&mut self, left: &Box<Expr>, left_type: &TypeName, op: &AssignOp, right: &Box<Expr>) -> Result<TypeName, String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_float_compound_assign";
+
+        match op {
+            AssignOp::AddAssign
+            | AssignOp::SubAssign
+            | AssignOp::MulAssign
+            | AssignOp::DivAssign => {}
+
+            _ => {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("Unsupported float compound assignment {:?}", op),
+                );
+            }
+        }
+
+        let size = self.type_size(left_type)?;
+
+        self.emit_addr(left)?;
+        self.push_section("text", "    push rax ; float compound destination address")?;
+
+        self.emit_load_value_at_rax(left_type, "float compound left value")?;
+        self.push_section("text", "    push rax ; float compound left value")?;
+
+        self.emit_expr_as_type(left_type, right)?;
+
+        self.push_section("text", "    pop rcx ; float compound right bits")?;
+        self.push_section("text", "    pop rax ; float compound left bits")?;
+        self.push_section("text", "    pop r10 ; float compound destination address")?;
+
+        match left_type {
+            TypeName::Builtin(BuiltinType::Float64) => {
+                self.push_section("text", "    movq xmm0, rax")?;
+                self.push_section("text", "    movq xmm1, rcx")?;
+
+                match op {
+                    AssignOp::AddAssign => self.push_section("text", "    addsd xmm0, xmm1")?,
+                    AssignOp::SubAssign => self.push_section("text", "    subsd xmm0, xmm1")?,
+                    AssignOp::MulAssign => self.push_section("text", "    mulsd xmm0, xmm1")?,
+                    AssignOp::DivAssign => self.push_section("text", "    divsd xmm0, xmm1")?,
+                    _ => unreachable!(),
+                }
+
+                self.push_section("text", "    movq rax, xmm0")?;
+            }
+
+            TypeName::Builtin(BuiltinType::Float32) => {
+                self.push_section("text", "    movd xmm0, eax")?;
+                self.push_section("text", "    movd xmm1, ecx")?;
+
+                match op {
+                    AssignOp::AddAssign => self.push_section("text", "    addss xmm0, xmm1")?,
+                    AssignOp::SubAssign => self.push_section("text", "    subss xmm0, xmm1")?,
+                    AssignOp::MulAssign => self.push_section("text", "    mulss xmm0, xmm1")?,
+                    AssignOp::DivAssign => self.push_section("text", "    divss xmm0, xmm1")?,
+                    _ => unreachable!(),
+                }
+
+                self.push_section("text", "    movd eax, xmm0")?;
+            }
+
+            _ => {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("Expected float type, got {:?}", left_type),
+                );
+            }
+        }
+
+        self.push_section("text", &format!(
+            "    mov {} [r10], {} ; float compound store",
+            self.size_specifier(size)?,
+            self.format_reg_size("rax", size)?,
+        ))?;
+
+        self.push_section("text", "    push rax ; float compound assignment result")?;
+
+        Ok(left_type.clone())
+    }
+    fn emit_u64_to_float_in_rax(&mut self, target_type: &TypeName) -> Result<(), String> {
+        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_u64_to_float_in_rax";
+
+        let id = self.next_label_id();
+        let small_label = format!("_u64_to_float_{}_small", id);
+        let done_label = format!("_u64_to_float_{}_done", id);
+
+        match target_type {
+            TypeName::Builtin(BuiltinType::Float64) => {
+                self.push_section("text", "    test rax, rax ; u64 -> float64")?;
+                self.push_section("text", &format!("    jns {}", small_label))?;
+
+                // Large unsigned value, high bit set.
+                //
+                // Compute:
+                //   temp = (x >> 1) | (x & 1)
+                //   result = (float64)temp * 2.0
+                //
+                // This avoids feeding a negative signed value to cvtsi2sd.
+                self.push_section("text", "    mov rcx, rax ; save u64 source")?;
+                self.push_section("text", "    and rax, 1 ; low bit")?;
+                self.push_section("text", "    shr rcx, 1 ; x >> 1")?;
+                self.push_section("text", "    or rcx, rax ; rounded half")?;
+                self.push_section("text", "    cvtsi2sd xmm0, rcx ; half as float64")?;
+                self.push_section("text", "    addsd xmm0, xmm0 ; restore magnitude")?;
+                self.push_section("text", &format!("    jmp {}", done_label))?;
+
+                self.push_section("text", &format!("{}:", small_label))?;
+                self.push_section("text", "    cvtsi2sd xmm0, rax ; signed-safe u64 -> float64")?;
+
+                self.push_section("text", &format!("{}:", done_label))?;
+                self.push_section("text", "    movq rax, xmm0 ; float64 result bits")?;
+            }
+
+            TypeName::Builtin(BuiltinType::Float32) => {
+                self.push_section("text", "    test rax, rax ; u64 -> float32")?;
+                self.push_section("text", &format!("    jns {}", small_label))?;
+
+                self.push_section("text", "    mov rcx, rax ; save u64 source")?;
+                self.push_section("text", "    and rax, 1 ; low bit")?;
+                self.push_section("text", "    shr rcx, 1 ; x >> 1")?;
+                self.push_section("text", "    or rcx, rax ; rounded half")?;
+                self.push_section("text", "    cvtsi2ss xmm0, rcx ; half as float32")?;
+                self.push_section("text", "    addss xmm0, xmm0 ; restore magnitude")?;
+                self.push_section("text", &format!("    jmp {}", done_label))?;
+
+                self.push_section("text", &format!("{}:", small_label))?;
+                self.push_section("text", "    cvtsi2ss xmm0, rax ; signed-safe u64 -> float32")?;
+
+                self.push_section("text", &format!("{}:", done_label))?;
+                self.push_section("text", "    movd eax, xmm0 ; float32 result bits")?;
+            }
+
+            _ => {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    &format!("Expected float target type, got {:?}", target_type),
+                );
+            }
+        }
+
+        Ok(())
+    }
+    //for if while for
+    fn emit_jump_if_false(&mut self, cond: &Expr, false_label: &str) -> Result<(), String> {
+        let cond_type = self.emit_expr(cond)?;
+
+        self.push_section("text", "    pop rax ; condition value")?;
+
+        match cond_type {
+            TypeName::Builtin(BuiltinType::Float64) => {
+                let true_label = format!("_float64_cond_{}_true", self.next_label_id());
+
+                self.push_section("text", "    movq xmm0, rax ; float64 condition bits")?;
+                self.push_section("text", "    pxor xmm1, xmm1 ; 0.0")?;
+                self.push_section("text", "    ucomisd xmm0, xmm1 ; compare cond with 0.0")?;
+
+                // NaN is considered true here because it is not equal to 0.0.
+                self.push_section("text", &format!("    jp {}", true_label))?;
+                self.push_section("text", &format!("    je {}", false_label))?;
+                self.push_section("text", &format!("{}:", true_label))?;
+            }
+
+            TypeName::Builtin(BuiltinType::Float32) => {
+                let true_label = format!("_float32_cond_{}_true", self.next_label_id());
+
+                self.push_section("text", "    movd xmm0, eax ; float32 condition bits")?;
+                self.push_section("text", "    pxor xmm1, xmm1 ; 0.0")?;
+                self.push_section("text", "    ucomiss xmm0, xmm1 ; compare cond with 0.0")?;
+
+                // NaN is considered true here because it is not equal to 0.0.
+                self.push_section("text", &format!("    jp {}", true_label))?;
+                self.push_section("text", &format!("    je {}", false_label))?;
+                self.push_section("text", &format!("{}:", true_label))?;
+            }
+
+            _ => {
+                self.push_section("text", "    test rax, rax")?;
+                self.push_section("text", &format!("    jz {}", false_label))?;
+            }
+        }
+
+        Ok(())
+    }
 
 
     fn emit_program(&mut self, program: &Program) -> Result<(), String> {
@@ -882,7 +1542,7 @@ impl CodeGenerator {
         match &decl.init {
             Some(init) => {
                 let dir = self.data_directive(&decl.Type)?;
-                let value = self.emit_static_initializer_value(init)?;
+                let value = self.emit_static_initializer_value(&decl.Type, init)?;
     
                 self.push_section(
                     "data",
@@ -1175,7 +1835,7 @@ _start:
         let size = self.type_size(&t)?;
 
         if let Some(init) = decl.init.clone() {
-            self.emit_expr(&init)?;
+            self.emit_expr_as_type(&t, &init)?;
 
             self.push_section("text", "    pop rax ; extract initializer expr")?;
 
@@ -1232,99 +1892,94 @@ _start:
         Ok(())
     }
     fn emit_while(&mut self, cond: &Expr, body: &Box<Stmt>, ret_label: &str) -> Result<(), String> {
-        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_while";
         let label_id = self.next_label_id();
         let start_label = format!("_while_{}_start", label_id);
         let end_label = format!("_while_{}_end", label_id);
 
         self.loop_stack.push((start_label.clone(), end_label.clone()));
 
-        self.push_section("text", &format!("{start_label}:"))?;
-        self.emit_expr(cond)?;
-        self.push_section("text", &format!("    
-    pop rax ; while condition check
-    test rax, rax
-    jz {end_label}
-"))?;
+        self.push_section("text", &format!("{}:", start_label))?;
+
+        self.emit_jump_if_false(cond, &end_label)?;
+
         self.emit_stmt(body, ret_label)?;
-        self.push_section("text", &format!("    jmp {start_label}"))?;
-        self.push_section("text", &format!("{end_label}:"))?;
+
+        self.push_section("text", &format!("    jmp {}", start_label))?;
+        self.push_section("text", &format!("{}:", end_label))?;
 
         self.loop_stack.pop();
+
         Ok(())
     }
     fn emit_if(&mut self, cond: &Expr, then_branch: &Stmt, else_branch: &Option<Box<Stmt>>, ret_label: &str) -> Result<(), String> {
-        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_if";
         let label_id = self.next_label_id();
         let else_label = format!("_if_{}_else", label_id);
         let end_label = format!("_if_{}_end", label_id);
-        self.emit_expr(cond)?;
-        self.push_section("text", "    pop rax ; if condition check")?;
-        self.push_section("text", "    test rax, rax")?;
+
         if else_branch.is_some() {
-            self.push_section("text", &format!("    jz {}", else_label))?;
+            self.emit_jump_if_false(cond, &else_label)?;
+
             self.emit_stmt(then_branch, ret_label)?;
             self.push_section("text", &format!("    jmp {}", end_label))?;
+
             self.push_section("text", &format!("{}:", else_label))?;
             self.emit_stmt(else_branch.as_ref().unwrap(), ret_label)?;
+
             self.push_section("text", &format!("{}:", end_label))?;
         }
         else {
-            self.push_section("text", &format!("    jz {}", end_label))?;
+            self.emit_jump_if_false(cond, &end_label)?;
+
             self.emit_stmt(then_branch, ret_label)?;
+
             self.push_section("text", &format!("{}:", end_label))?;
         }
+
         Ok(())
     }
     fn emit_for(&mut self, init: &Option<ForInit>, cond: &Option<Expr>, step: &Option<Expr>, body: &Stmt, ret_label: &str) -> Result<(), String> {
-        let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_for";
         let label_id = self.next_label_id();
         let start_label = format!("_for_{}_start", label_id);
         let step_label = format!("_for_{}_step", label_id);
         let end_label = format!("_for_{}_end", label_id);
 
-        self.func.local_scopes.push(HashMap::new()); //scope for init
+        self.func.local_scopes.push(HashMap::new());
 
-        //init
         if let Some(init) = init {
             match init {
                 ForInit::VarDecl(decl) => {
                     self.emit_stmt(&Stmt::VarDecl(decl.clone()), ret_label)?;
                 }
+
                 ForInit::Expr(expr) => {
                     self.emit_expr(expr)?;
-                    self.push_section("text", "    pop rax")?;
+                    self.push_section("text", "    pop rax ; discard for init expr")?;
                 }
             }
         }
 
-        //condition
-        self.push_section("text", &format!("{start_label}:"))?;
+        self.push_section("text", &format!("{}:", start_label))?;
 
         if let Some(cond_expr) = cond {
-            self.emit_expr(cond_expr)?;
-            self.push_section("text", &format!("
-    pop rax
-    test rax, rax
-    jz {end_label}
-"))?;
+            self.emit_jump_if_false(cond_expr, &end_label)?;
         }
-        //body
+
         self.loop_stack.push((step_label.clone(), end_label.clone()));
         self.emit_stmt(body, ret_label)?;
         self.loop_stack.pop();
 
-        //step
-        self.push_section("text", &format!("{step_label}:"))?;
+        self.push_section("text", &format!("{}:", step_label))?;
+
         if let Some(step_expr) = step {
             self.emit_expr(step_expr)?;
-            self.push_section("text", "    pop rax")?;
+            self.push_section("text", "    pop rax ; discard for step expr")?;
         }
 
-        self.push_section("text", &format!("    jmp {start_label}"))?;
-        self.push_section("text", &format!("{end_label}:"))?;
+        self.push_section("text", &format!("    jmp {}", start_label))?;
+        self.push_section("text", &format!("{}:", end_label))?;
 
         self.func.local_scopes.pop();
+
         Ok(())
     }
     
@@ -1343,8 +1998,10 @@ _start:
                 TypeName::Builtin(BuiltinType::Int64)
             }
             Expr::FloatLiteral(val) => {
-                return self.error(ERROR_STRING_ROOT, "Floats are not supported!");
-                TypeName::Builtin(BuiltinType::Float64)
+                self.emit_float_literal_as_type(
+                    &TypeName::Builtin(BuiltinType::Float64),
+                    *val,
+                )?
             }
             Expr::CharLiteral(val) => {
                 self.push_section(
@@ -1355,7 +2012,7 @@ _start:
                 TypeName::Builtin(BuiltinType::Char)
             }
             Expr::StringLiteral(_) => {
-                let str_ptr = self.emit_static_initializer_value(expr)?;
+                let str_ptr = self.emit_static_initializer_value(&TypeName::Builtin(BuiltinType::String), expr)?;
             
                 self.push_section("text", &format!(
                     "    lea rax, [{}] ; string literal address",
@@ -1416,11 +2073,19 @@ _start:
         let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_identifier";
     
         if let Ok((offset, t)) = self.lookup_local_var(id) {
-            if matches!(t, TypeName::Array(_, _)) {
-                return self.error(
-                    ERROR_STRING_ROOT,
-                    &format!("Cannot use local array '{}' as a value; use &{}[0]", id, id),
-                );
+            if let TypeName::Array(elem, _) = &t {
+                self.push_section("text", &format!(
+                    "    lea rax, [rbp{}] ; array-to-pointer decay {}",
+                    self.format_offset(offset),
+                    id
+                ))?;
+
+                self.push_section("text", &format!(
+                    "    push rax ; decayed array pointer {}",
+                    id
+                ))?;
+
+                return Ok(TypeName::Pointer(Box::new((**elem).clone())));
             }
     
             self.push_section("text", &format!(
@@ -1437,11 +2102,19 @@ _start:
         }
     
         if let Ok(t) = self.lookup_global_var(id) {
-            if matches!(t, TypeName::Array(_, _)) {
-                return self.error(
-                    ERROR_STRING_ROOT,
-                    &format!("Cannot use global array '{}' as a value; use &{}[0]", id, id),
-                );
+            if let TypeName::Array(elem, _) = &t {
+                self.push_section("text", &format!(
+                    "    lea rax, [rel {}] ; global array-to-pointer decay {}",
+                    id,
+                    id
+                ))?;
+
+                self.push_section("text", &format!(
+                    "    push rax ; decayed global array pointer {}",
+                    id
+                ))?;
+
+                return Ok(TypeName::Pointer(Box::new((**elem).clone())));
             }
     
             self.push_section("text", &format!(
@@ -1500,6 +2173,14 @@ _start:
             }
             PrefixOp::Inc => {
                 let expr_type = self.emit_addr(expr)?;
+
+                if self.is_float_type(&expr_type) {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        "Float increment/decrement is not implemented yet",
+                    );
+                }
+
                 if matches!(expr_type, TypeName::Array(_, _)) {
                     return self.error(
                         ERROR_STRING_ROOT,
@@ -1550,6 +2231,14 @@ _start:
 
             PrefixOp::Dec => {
                 let expr_type = self.emit_addr(expr)?;
+
+                if self.is_float_type(&expr_type) {
+                    return self.error(
+                        ERROR_STRING_ROOT,
+                        "Float increment/decrement is not implemented yet",
+                    );
+                }
+
                 if matches!(expr_type, TypeName::Array(_, _)) {
                     return self.error(
                         ERROR_STRING_ROOT,
@@ -1612,9 +2301,30 @@ _start:
             }
             PrefixOp::Neg => {
                 let expr_type = self.emit_expr(expr)?;
-                self.push_section("text", "    pop rax")?;
-                self.push_section("text", "    neg rax")?;
-                self.push_section("text", "    push rax")?;
+
+                self.push_section("text", "    pop rax ; unary neg")?;
+
+                match expr_type {
+                    TypeName::Builtin(BuiltinType::Float64) => {
+                        self.push_section("text", "    movq xmm0, rax ; float64 neg source")?;
+                        self.push_section("text", "    pxor xmm1, xmm1 ; 0.0")?;
+                        self.push_section("text", "    subsd xmm1, xmm0 ; 0.0 - x")?;
+                        self.push_section("text", "    movq rax, xmm1 ; float64 neg result")?;
+                    }
+
+                    TypeName::Builtin(BuiltinType::Float32) => {
+                        self.push_section("text", "    movd xmm0, eax ; float32 neg source")?;
+                        self.push_section("text", "    pxor xmm1, xmm1 ; 0.0")?;
+                        self.push_section("text", "    subss xmm1, xmm0 ; 0.0 - x")?;
+                        self.push_section("text", "    movd eax, xmm1 ; float32 neg result")?;
+                    }
+
+                    _ => {
+                        self.push_section("text", "    neg rax")?;
+                    }
+                }
+
+                self.push_section("text", "    push rax ; unary neg result")?;
 
                 expr_type
             }
@@ -1740,6 +2450,15 @@ _start:
         let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_postfix";
     
         let expr_type = self.emit_addr(expr)?;
+
+        if self.is_float_type(&expr_type) {
+            return self.error(
+                ERROR_STRING_ROOT,
+                "Float postfix increment/decrement is not implemented yet",
+            );
+        }
+
+
         if matches!(expr_type, TypeName::Array(_, _)) {
             return self.error(
                 ERROR_STRING_ROOT,
@@ -1852,7 +2571,27 @@ _start:
     }
 
     let left_type = self.emit_expr(left)?;
-    let _right_type = self.emit_expr(right)?;
+
+    if self.is_float_type(&left_type) {
+        self.emit_expr_as_type(&left_type, right)?;
+
+        self.push_section("text", "    pop rcx ; float binary right bits")?;
+        self.push_section("text", "    pop rax ; float binary left bits")?;
+
+        self.push_section("text", "    push rax ; restore left for float helper")?;
+        self.push_section("text", "    push rcx ; restore right for float helper")?;
+
+        return self.emit_float_binary_from_stack(&left_type, op);
+    }
+
+    let right_type = self.emit_expr(right)?;
+
+    if self.is_float_type(&right_type) {
+        return self.error(
+            ERROR_STRING_ROOT,
+            "Mixed integer/float binary reached codegen; analyzer should reject this",
+        );
+    }
 
     self.push_section("text", "    pop rcx ; binary right")?;
     self.push_section("text", "    pop rax ; binary left")?;
@@ -2045,7 +2784,7 @@ _start:
                 self.push_section("text", "    push rax ; assignment destination address")?;
 
                 // stack: address, right_value
-                let right_type = self.emit_expr(right)?;
+                let right_type = self.emit_expr_as_type(&left_type, right)?;
 
                 if matches!(right_type, TypeName::Array(_, _)) {
                     return self.error(
@@ -2079,6 +2818,10 @@ _start:
             | AssignOp::XorAssign
             | AssignOp::LshiftAssign
             | AssignOp::RshiftAssign => {
+                if self.is_float_type(&left_type) {
+                    return self.emit_float_compound_assign(left, &left_type, op, right);
+                }
+
                 // rax = address of left
                 self.push_section("text", "    push rax ; compound assignment destination address")?;
 
@@ -2115,7 +2858,7 @@ _start:
                 self.push_section("text", "    push rax ; compound assignment left value")?;
 
                 // stack: address, left_value, right_value
-                let right_type = self.emit_expr(right)?;
+                let right_type = self.emit_expr_as_type(&left_type, right)?;
 
                 if matches!(right_type, TypeName::Array(_, _)) {
                     return self.error(
@@ -2229,19 +2972,13 @@ _start:
     fn emit_cast(&mut self, t: &TypeName, expr: &Box<Expr>) -> Result<TypeName, String> {
         let ERROR_STRING_ROOT = "velc:CodeGenerator:emit_cast";
 
-        self.emit_expr(expr)?;
+        let source_type = self.emit_expr(expr)?;
 
         self.push_section("text", "    pop rax ; cast source value")?;
 
         match t {
             TypeName::Builtin(BuiltinType::Void) => {
                 return self.error(ERROR_STRING_ROOT, "Cannot cast to void");
-            }
-
-            TypeName::Builtin(BuiltinType::Float32)
-            | TypeName::Builtin(BuiltinType::Float64)
-            | TypeName::FloatLiteral => {
-                return self.error(ERROR_STRING_ROOT, "Float casts are not implemented in backend yet");
             }
 
             TypeName::Array(_, _) => {
@@ -2252,14 +2989,155 @@ _start:
                 return self.error(ERROR_STRING_ROOT, "Function casts are not implemented yet");
             }
 
-            TypeName::IntLiteral => {
-                return self.error(ERROR_STRING_ROOT, "Cannot cast to IntLiteral pseudo-type");
+            TypeName::IntLiteral | TypeName::FloatLiteral => {
+                return self.error(
+                    ERROR_STRING_ROOT,
+                    "Cannot cast to literal pseudo-type in backend",
+                );
+            }
+
+            TypeName::Builtin(BuiltinType::Float64) => {
+                match source_type {
+                    TypeName::Builtin(BuiltinType::Float64) => {
+                        // Already float64 bits in rax.
+                    }
+
+                    TypeName::Builtin(BuiltinType::Float32) => {
+                        self.push_section("text", "    movd xmm0, eax ; float32 source")?;
+                        self.push_section("text", "    cvtss2sd xmm0, xmm0 ; float32 -> float64")?;
+                        self.push_section("text", "    movq rax, xmm0 ; float64 result bits")?;
+                    }
+
+                    TypeName::Builtin(BuiltinType::Int8)
+                    | TypeName::Builtin(BuiltinType::Int16)
+                    | TypeName::Builtin(BuiltinType::Int32)
+                    | TypeName::Builtin(BuiltinType::Int64)
+                    | TypeName::Builtin(BuiltinType::Char) => {
+                        self.push_section("text", "    cvtsi2sd xmm0, rax ; signed integer -> float64")?;
+                        self.push_section("text", "    movq rax, xmm0 ; float64 result bits")?;
+                    }
+
+                    TypeName::Builtin(BuiltinType::Uint64) => {
+                        self.emit_u64_to_float_in_rax(t)?;
+                    }
+
+                    TypeName::Builtin(BuiltinType::Bool)
+                    | TypeName::Builtin(BuiltinType::Uint8)
+                    | TypeName::Builtin(BuiltinType::Uint16)
+                    | TypeName::Builtin(BuiltinType::Uint32) => {
+                        self.push_section("text", "    cvtsi2sd xmm0, rax ; unsigned integer -> float64")?;
+                        self.push_section("text", "    movq rax, xmm0 ; float64 result bits")?;
+                    }
+
+                    TypeName::Builtin(BuiltinType::String)
+                    | TypeName::Pointer(_) => {
+                        return self.error(
+                            ERROR_STRING_ROOT,
+                            "Pointer/string to float cast is not implemented",
+                        );
+                    }
+
+                    other => {
+                        return self.error(
+                            ERROR_STRING_ROOT,
+                            &format!("Cannot cast {:?} to float64", other),
+                        );
+                    }
+                }
+            }
+
+            TypeName::Builtin(BuiltinType::Float32) => {
+                match source_type {
+                    TypeName::Builtin(BuiltinType::Float32) => {
+                        // Already float32 bits in low eax.
+                    }
+
+                    TypeName::Builtin(BuiltinType::Float64) => {
+                        self.push_section("text", "    movq xmm0, rax ; float64 source")?;
+                        self.push_section("text", "    cvtsd2ss xmm0, xmm0 ; float64 -> float32")?;
+                        self.push_section("text", "    movd eax, xmm0 ; float32 result bits")?;
+                    }
+
+                    TypeName::Builtin(BuiltinType::Int8)
+                    | TypeName::Builtin(BuiltinType::Int16)
+                    | TypeName::Builtin(BuiltinType::Int32)
+                    | TypeName::Builtin(BuiltinType::Int64)
+                    | TypeName::Builtin(BuiltinType::Char) => {
+                        self.push_section("text", "    cvtsi2ss xmm0, rax ; signed integer -> float32")?;
+                        self.push_section("text", "    movd eax, xmm0 ; float32 result bits")?;
+                    }
+
+                    TypeName::Builtin(BuiltinType::Uint64) => {
+                        self.emit_u64_to_float_in_rax(t)?;
+                    }
+
+                    TypeName::Builtin(BuiltinType::Bool)
+                    | TypeName::Builtin(BuiltinType::Uint8)
+                    | TypeName::Builtin(BuiltinType::Uint16)
+                    | TypeName::Builtin(BuiltinType::Uint32) => {
+                        self.push_section("text", "    cvtsi2ss xmm0, rax ; unsigned integer -> float32")?;
+                        self.push_section("text", "    movd eax, xmm0 ; float32 result bits")?;
+                    }
+
+                    TypeName::Builtin(BuiltinType::String)
+                    | TypeName::Pointer(_) => {
+                        return self.error(
+                            ERROR_STRING_ROOT,
+                            "Pointer/string to float cast is not implemented",
+                        );
+                    }
+
+                    other => {
+                        return self.error(
+                            ERROR_STRING_ROOT,
+                            &format!("Cannot cast {:?} to float32", other),
+                        );
+                    }
+                }
             }
 
             TypeName::Builtin(BuiltinType::Bool) => {
-                self.push_section("text", "    test rax, rax")?;
-                self.push_section("text", "    setne al")?;
-                self.push_section("text", "    movzx rax, al")?;
+                match source_type {
+                    TypeName::Builtin(BuiltinType::Float64) => {
+                        self.push_section("text", "    movq xmm0, rax ; float64 bool cast source")?;
+                        self.push_section("text", "    pxor xmm1, xmm1 ; 0.0")?;
+                        self.push_section("text", "    ucomisd xmm0, xmm1")?;
+
+                        let true_label = format!("_cast_bool_float64_{}_true", self.next_label_id());
+                        let end_label = format!("_cast_bool_float64_{}_end", self.next_label_id());
+
+                        self.push_section("text", &format!("    jp {}", true_label))?;
+                        self.push_section("text", &format!("    jne {}", true_label))?;
+                        self.push_section("text", "    mov rax, 0")?;
+                        self.push_section("text", &format!("    jmp {}", end_label))?;
+                        self.push_section("text", &format!("{}:", true_label))?;
+                        self.push_section("text", "    mov rax, 1")?;
+                        self.push_section("text", &format!("{}:", end_label))?;
+                    }
+
+                    TypeName::Builtin(BuiltinType::Float32) => {
+                        self.push_section("text", "    movd xmm0, eax ; float32 bool cast source")?;
+                        self.push_section("text", "    pxor xmm1, xmm1 ; 0.0")?;
+                        self.push_section("text", "    ucomiss xmm0, xmm1")?;
+
+                        let true_label = format!("_cast_bool_float32_{}_true", self.next_label_id());
+                        let end_label = format!("_cast_bool_float32_{}_end", self.next_label_id());
+
+                        self.push_section("text", &format!("    jp {}", true_label))?;
+                        self.push_section("text", &format!("    jne {}", true_label))?;
+                        self.push_section("text", "    mov rax, 0")?;
+                        self.push_section("text", &format!("    jmp {}", end_label))?;
+                        self.push_section("text", &format!("{}:", true_label))?;
+                        self.push_section("text", "    mov rax, 1")?;
+                        self.push_section("text", &format!("{}:", end_label))?;
+                    }
+
+                    _ => {
+                        self.push_section("text", "    test rax, rax")?;
+                        self.push_section("text", "    setne al")?;
+                        self.push_section("text", "    movzx rax, al")?;
+                    }
+                }
             }
 
             TypeName::Builtin(BuiltinType::String) => {
@@ -2274,33 +3152,131 @@ _start:
 
             TypeName::Builtin(BuiltinType::Int8)
             | TypeName::Builtin(BuiltinType::Char) => {
+                match source_type {
+                    TypeName::Builtin(BuiltinType::Float64) => {
+                        self.push_section("text", "    movq xmm0, rax ; float64 source")?;
+                        self.push_section("text", "    cvttsd2si rax, xmm0 ; float64 -> int64")?;
+                    }
+
+                    TypeName::Builtin(BuiltinType::Float32) => {
+                        self.push_section("text", "    movd xmm0, eax ; float32 source")?;
+                        self.push_section("text", "    cvttss2si rax, xmm0 ; float32 -> int64")?;
+                    }
+
+                    _ => {}
+                }
+
                 self.push_section("text", "    movsx rax, al")?;
             }
 
             TypeName::Builtin(BuiltinType::Uint8) => {
+                match source_type {
+                    TypeName::Builtin(BuiltinType::Float64) => {
+                        self.push_section("text", "    movq xmm0, rax ; float64 source")?;
+                        self.push_section("text", "    cvttsd2si rax, xmm0 ; float64 -> int64")?;
+                    }
+
+                    TypeName::Builtin(BuiltinType::Float32) => {
+                        self.push_section("text", "    movd xmm0, eax ; float32 source")?;
+                        self.push_section("text", "    cvttss2si rax, xmm0 ; float32 -> int64")?;
+                    }
+
+                    _ => {}
+                }
+
                 self.push_section("text", "    movzx rax, al")?;
             }
 
             TypeName::Builtin(BuiltinType::Int16) => {
+                match source_type {
+                    TypeName::Builtin(BuiltinType::Float64) => {
+                        self.push_section("text", "    movq xmm0, rax ; float64 source")?;
+                        self.push_section("text", "    cvttsd2si rax, xmm0 ; float64 -> int64")?;
+                    }
+
+                    TypeName::Builtin(BuiltinType::Float32) => {
+                        self.push_section("text", "    movd xmm0, eax ; float32 source")?;
+                        self.push_section("text", "    cvttss2si rax, xmm0 ; float32 -> int64")?;
+                    }
+
+                    _ => {}
+                }
+
                 self.push_section("text", "    movsx rax, ax")?;
             }
 
             TypeName::Builtin(BuiltinType::Uint16) => {
+                match source_type {
+                    TypeName::Builtin(BuiltinType::Float64) => {
+                        self.push_section("text", "    movq xmm0, rax ; float64 source")?;
+                        self.push_section("text", "    cvttsd2si rax, xmm0 ; float64 -> int64")?;
+                    }
+
+                    TypeName::Builtin(BuiltinType::Float32) => {
+                        self.push_section("text", "    movd xmm0, eax ; float32 source")?;
+                        self.push_section("text", "    cvttss2si rax, xmm0 ; float32 -> int64")?;
+                    }
+
+                    _ => {}
+                }
+
                 self.push_section("text", "    movzx rax, ax")?;
             }
 
             TypeName::Builtin(BuiltinType::Int32) => {
+                match source_type {
+                    TypeName::Builtin(BuiltinType::Float64) => {
+                        self.push_section("text", "    movq xmm0, rax ; float64 source")?;
+                        self.push_section("text", "    cvttsd2si rax, xmm0 ; float64 -> int64")?;
+                    }
+
+                    TypeName::Builtin(BuiltinType::Float32) => {
+                        self.push_section("text", "    movd xmm0, eax ; float32 source")?;
+                        self.push_section("text", "    cvttss2si rax, xmm0 ; float32 -> int64")?;
+                    }
+
+                    _ => {}
+                }
+
                 self.push_section("text", "    movsxd rax, eax")?;
             }
 
             TypeName::Builtin(BuiltinType::Uint32) => {
+                match source_type {
+                    TypeName::Builtin(BuiltinType::Float64) => {
+                        self.push_section("text", "    movq xmm0, rax ; float64 source")?;
+                        self.push_section("text", "    cvttsd2si rax, xmm0 ; float64 -> int64")?;
+                    }
+
+                    TypeName::Builtin(BuiltinType::Float32) => {
+                        self.push_section("text", "    movd xmm0, eax ; float32 source")?;
+                        self.push_section("text", "    cvttss2si rax, xmm0 ; float32 -> int64")?;
+                    }
+
+                    _ => {}
+                }
+
                 // Writing to eax zero-extends into rax.
                 self.push_section("text", "    mov eax, eax")?;
             }
 
             TypeName::Builtin(BuiltinType::Int64)
             | TypeName::Builtin(BuiltinType::Uint64) => {
-                // Already a full qword in rax.
+                match source_type {
+                    TypeName::Builtin(BuiltinType::Float64) => {
+                        self.push_section("text", "    movq xmm0, rax ; float64 source")?;
+                        self.push_section("text", "    cvttsd2si rax, xmm0 ; float64 -> int64")?;
+                    }
+
+                    TypeName::Builtin(BuiltinType::Float32) => {
+                        self.push_section("text", "    movd xmm0, eax ; float32 source")?;
+                        self.push_section("text", "    cvttss2si rax, xmm0 ; float32 -> int64")?;
+                    }
+
+                    _ => {
+                        // Already a full qword in rax.
+                    }
+                }
             }
         }
 
@@ -2380,8 +3356,8 @@ _start:
         //
         // Then we pop arg1 into rsi, arg0 into rdi, and function_pointer into r11.
 
-        for arg in args {
-            self.emit_expr(arg)?;
+        for (arg, param_type) in args.iter().zip(param_types.iter()) {
+            self.emit_expr_as_type(param_type, arg)?;
         }
 
         for i in (0..args.len()).rev() {

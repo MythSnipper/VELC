@@ -1,4 +1,6 @@
 #once
+#include:sys.vel
+#include:string.vel
 
 //print functions
 void print_char(char out) {
@@ -100,6 +102,102 @@ void print_hex_ln(uint64 value) {
     print_char('\n');
 }
 
+void print_float64_prec(float64 value, uint64 precision) {
+    if(value < 0.0) { //handle negative
+        print_char('-');
+        value = 0.0 - value;
+    }
+
+    //round to prec decimal places
+    float64 rounder = 0.5;
+    for(uint64 i=0;i<precision;i++){
+        rounder /= 10.0;
+    }
+    value += rounder;
+
+    uint64 whole = (uint64)value;
+    print_uint64(whole);
+
+    if(precision == 0) { //no decimal places after integer
+        return;
+    }
+
+    print_char('.');
+
+    float64 frac = value - (float64)whole;
+
+    uint64 i = 0;
+    for(uint64 i=0;i<precision;i++) {
+        frac *= 10.0;
+
+        uint64 digit = (uint64)frac;
+
+        print_char((char)(digit + '0'));
+
+        frac -= (float64)digit;
+    }
+}
+
+void print_float64(float64 value) {
+    print_float64_prec(value, 17);
+}
+void print_float64_ln(float64 value) {
+    print_float64(value);
+    print_char('\n');
+}
+
+void print_float32_prec(float32 value, uint64 precision) {
+    if(value < 0.0) {
+        print_char('-');
+        value = 0.0 - value;
+    }
+
+    // Round to requested decimal places.
+    float32 rounder = 0.5;
+    uint64 r = 0;
+    while(r < precision) {
+        rounder /= 10.0;
+        r++;
+    }
+    value += rounder;
+
+    uint64 whole = (uint64)value;
+    print_uint64(whole);
+
+    if(precision == 0) {
+        return;
+    }
+
+    print_char('.');
+
+    float32 frac = value - (float32)whole;
+
+    uint64 i = 0;
+    while(i < precision) {
+        frac *= 10.0;
+
+        uint64 digit = (uint64)frac;
+
+        print_char((char)(digit + '0'));
+
+        frac -= (float32)digit;
+
+        i++;
+    }
+}
+
+void print_float32(float32 value) {
+    print_float32_prec(value, 6);
+}
+void print_float32_ln(float32 value) {
+    print_float32(value);
+    print_char('\n');
+}
+
+
+
+
+
 int64 input(char* buf, uint64 buf_size) {
     int64 n = sys_read(0, buf, buf_size - 1); //reserve for null terminator
 
@@ -117,3 +215,8 @@ int64 input(char* buf, uint64 buf_size) {
 
     return n;
 }
+
+
+
+
+

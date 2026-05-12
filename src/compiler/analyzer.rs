@@ -294,6 +294,23 @@ impl Analyzer {
         }
     }
 
+    fn can_compare_equality(&self, left: &TypeName, right: &TypeName) -> bool {
+        if self.is_array_type(left) || self.is_array_type(right) {
+            return false;
+        }
+
+        if left == right {
+            return true;
+        }
+
+        if self.can_assign(left, right) || self.can_assign(right, left) {
+            return true;
+        }
+
+        false
+    }
+
+
     fn is_array_type(&self, t: &TypeName) -> bool {
         matches!(t, TypeName::Array(_, _))
     }    
@@ -377,6 +394,17 @@ impl Analyzer {
             _ => Ok(()),
         }
     }
+    //decays type of an array to pointer
+    fn decay_array_type(&self, t: &TypeName) -> TypeName {
+        match t {
+            TypeName::Array(elem, _) => {
+                TypeName::Pointer(Box::new((**elem).clone()))
+            }
+            _ => t.clone(),
+        }
+    }
+    
+
 
 
     fn is_assignable_expr(&self, expr: &Expr) -> bool {
@@ -1182,7 +1210,7 @@ impl Analyzer {
     
             Expr::Identifier(name) => {
                 if let Some(Type) = self.lookup_variable_type(name) {
-                    Ok(Type)
+                    Ok(self.decay_array_type(&Type))
                 }
                 else if let Some(sig) = self.lookup_function_signature(name) {
                     Ok(TypeName::Function {
@@ -1361,7 +1389,7 @@ impl Analyzer {
     
                     BinaryOp::Eq
                     | BinaryOp::Neq => {
-                        if !self.can_assign(&left_type, &right_type) && !self.can_assign(&right_type, &left_type) {
+                        if !self.can_compare_equality(&left_type, &right_type) {
                             return self.error(
                                 ERROR_STRING_ROOT,
                                 &format!(
@@ -1372,7 +1400,7 @@ impl Analyzer {
                                 ),
                             );
                         }
-    
+
                         Ok(TypeName::Builtin(BuiltinType::Bool))
                     }
     
@@ -1449,12 +1477,27 @@ impl Analyzer {
             }
     
             Expr::Assign { left, op, right } => {
+
+                
+
                 if !self.is_assignable_expr(left) {
                     return self.error(
                         ERROR_STRING_ROOT,
                         "Invalid assignment target",
                     );
                 }
+
+                if let Expr::Identifier(name) = left.as_ref() { //check if left is literal array
+                    if let Some(t) = self.lookup_variable_type(name) {
+                        if self.is_array_type(&t) {
+                            return self.error(
+                                ERROR_STRING_ROOT,
+                                "Cannot assign to whole array value",
+                            );
+                        }
+                    }
+                }
+                
 
                 let left_type = self.analyze_expr(left)?;
 

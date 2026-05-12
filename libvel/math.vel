@@ -1,0 +1,32 @@
+#once
+#include:io.vel
+
+float64 fabs(float64 x) {
+    if(x < 0.0) {
+        return -x;
+    }
+    return x;
+}
+
+float64 sqrt(float64 x) {
+    float64 x0 = (float64)((uint64)x << 1);
+    
+    float64 min_diff = 0.00000000000000001;
+
+    while(true) {
+        float64 x1 = (x0 + (x / x0)) * 0.5;
+
+        float64 diff = fabs(x1 - x0);
+
+        x0 = x1;
+        if(diff <= min_diff) {
+            break;
+        }
+    }
+    return x0;
+}
+
+
+
+
+
