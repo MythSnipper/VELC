@@ -249,13 +249,9 @@ void print_float64_prec(float64 value, uint64 precision) {
         frac -= (float64)digit;
     }
 }
-void print_float64_prec_ln(float64 value, uint64 precision) {
-    print_float64_prec(value, precision);
-    print_char('\n');
-}
 
 void print_float64(float64 value) {
-    print_float64_prec(value, 6);
+    print_float64_prec(value, 17);
 }
 void print_float64_ln(float64 value) {
     print_float64(value);
@@ -301,10 +297,6 @@ void print_float32_prec(float32 value, uint64 precision) {
         i++;
     }
 }
-void print_float32_prec_ln(float32 value, uint64 precision) {
-    print_float32_prec(value, precision);
-    print_char('\n');
-}
 
 void print_float32(float32 value) {
     print_float32_prec(value, 6);
@@ -313,6 +305,8 @@ void print_float32_ln(float32 value) {
     print_float32(value);
     print_char('\n');
 }
+
+
 
 
 
@@ -333,6 +327,11 @@ int64 input(char* buf, uint64 buf_size) {
 
     return n;
 }
+
+
+
+
+
 
 
 

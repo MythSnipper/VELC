@@ -1687,49 +1687,6 @@ _print_float64_prec_end:
 
 
 
-global print_float64_prec_ln
-print_float64_prec_ln:
-    endbr64
-    push rbp
-    mov rbp, rsp
-    sub rsp, 16 ; function locals
-    mov qword [rbp-8], rdi ; function parameter value
-    mov qword [rbp-16], rsi ; function parameter precision
-    lea rax, [rbp-8] ; address of local value
-    mov rax, qword [rax] ; value float64 raw bits
-    push rax ; value
-    lea rax, [rbp-16] ; address of local precision
-    mov rax, qword [rax] ; precision
-    push rax ; precision
-    pop rsi ; call argument 1
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call print_float64_prec
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; discard expr
-    push qword 10 ; char literal
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call print_char
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; discard expr
-_print_float64_prec_ln_end:
-    mov rsp, rbp
-    pop rbp
-    ret
-
-
-
-
-
 global print_float64
 print_float64:
     endbr64
@@ -1740,7 +1697,7 @@ print_float64:
     lea rax, [rbp-8] ; address of local value
     mov rax, qword [rax] ; value float64 raw bits
     push rax ; value
-    push qword 6 ; int literal
+    push qword 17 ; int literal
     pop rsi ; call argument 1
     pop rdi ; call argument 0
     mov r10, rsp ; save caller rsp before call
@@ -2107,49 +2064,6 @@ _u64_to_float_27_done:
     jmp _while_26_start
 _while_26_end:
 _print_float32_prec_end:
-    mov rsp, rbp
-    pop rbp
-    ret
-
-
-
-
-
-global print_float32_prec_ln
-print_float32_prec_ln:
-    endbr64
-    push rbp
-    mov rbp, rsp
-    sub rsp, 16 ; function locals
-    mov dword [rbp-4], edi ; function parameter value
-    mov qword [rbp-12], rsi ; function parameter precision
-    lea rax, [rbp-4] ; address of local value
-    mov eax, dword [rax] ; value float32 raw bits
-    push rax ; value
-    lea rax, [rbp-12] ; address of local precision
-    mov rax, qword [rax] ; precision
-    push rax ; precision
-    pop rsi ; call argument 1
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call print_float32_prec
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; discard expr
-    push qword 10 ; char literal
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call print_char
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; discard expr
-_print_float32_prec_ln_end:
     mov rsp, rbp
     pop rbp
     ret

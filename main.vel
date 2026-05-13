@@ -5,9 +5,9 @@ char buf[INPUT_BUFFER_SIZE];
 
 uint64 main() {
 
-    print_float64_ln(sqrt(121.0));
+    print_bool_ln(true);
 
-    
+
     return 0;
 }
 

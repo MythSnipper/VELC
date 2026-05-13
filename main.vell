@@ -336,6 +336,12 @@ int64 input(char* buf, uint64 buf_size) {
 
 
 
+
+bool isnan(float64 x) {
+    return x == -9223372036854775808.0;
+}
+
+
 float64 fabs(float64 x) {
     if(x < 0.0) {
         return -x;
@@ -343,10 +349,14 @@ float64 fabs(float64 x) {
     return x;
 }
 
+
+
 float64 sqrt(float64 x) {
-    float64 x0 = (float64)((uint64)x << 1);
-    
-    float64 min_diff = 0.00000000000000001;
+    if(x < 0.0) {
+        float64 n = 0.0;
+        return n/n;
+    }
+    float64 x0 = (float64)((uint64)x >> 1);
 
     while(true) {
         float64 x1 = (x0 + (x / x0)) * 0.5;
@@ -354,7 +364,7 @@ float64 sqrt(float64 x) {
         float64 diff = fabs(x1 - x0);
 
         x0 = x1;
-        if(diff <= min_diff) {
+        if(diff <= 0.000000000000001 * x1) {
             break;
         }
     }
@@ -430,9 +440,9 @@ char buf[1024];
 
 uint64 main() {
 
-    print_float64_ln(sqrt(121.0));
+    print_bool_ln(true);
 
-    
+
     return 0;
 }
 

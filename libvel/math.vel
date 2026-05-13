@@ -1,6 +1,11 @@
 #once
 #include:io.vel
 
+#define NaN -9223372036854775808.0
+bool isnan(float64 x) {
+    return x == NaN;
+}
+
 float64 fabs(float64 x) {
     if(x < 0.0) {
         return -x;
@@ -8,10 +13,14 @@ float64 fabs(float64 x) {
     return x;
 }
 
+
+#define EPS 0.000000000000001
 float64 sqrt(float64 x) {
-    float64 x0 = (float64)((uint64)x << 1);
-    
-    float64 min_diff = 0.00000000000000001;
+    if(x < 0.0) {
+        float64 n = 0.0;
+        return n/n;
+    }
+    float64 x0 = (float64)((uint64)x >> 1);
 
     while(true) {
         float64 x1 = (x0 + (x / x0)) * 0.5;
@@ -19,7 +28,7 @@ float64 sqrt(float64 x) {
         float64 diff = fabs(x1 - x0);
 
         x0 = x1;
-        if(diff <= min_diff) {
+        if(diff <= EPS * x1) {
             break;
         }
     }
