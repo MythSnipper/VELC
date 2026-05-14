@@ -2332,8 +2332,53 @@ _isnan_end:
 
 
 
-global fabs
-fabs:
+global abs_i64
+abs_i64:
+    endbr64
+    push rbp
+    mov rbp, rsp
+    sub rsp, 16 ; function locals
+    mov qword [rbp-8], rdi ; function parameter x
+    lea rax, [rbp-8] ; address of local x
+    mov rax, qword [rax] ; x
+    push rax ; x
+    push qword 63 ; int literal
+    pop rcx ; binary right
+    pop rax ; binary left
+    sar rax, cl
+    push rax ; binary result
+    pop rax ; extract initializer expr
+    mov qword [rbp-16], rax ; y
+    lea rax, [rbp-8] ; address of local x
+    mov rax, qword [rax] ; x
+    push rax ; x
+    lea rax, [rbp-16] ; address of local y
+    mov rax, qword [rax] ; y
+    push rax ; y
+    pop rcx ; binary right
+    pop rax ; binary left
+    xor rax, rcx
+    push rax ; binary result
+    lea rax, [rbp-16] ; address of local y
+    mov rax, qword [rax] ; y
+    push rax ; y
+    pop rcx ; binary right
+    pop rax ; binary left
+    sub rax, rcx
+    push rax ; binary result
+    pop rax ; put ret value in rax
+    jmp _abs_i64_end ; return
+_abs_i64_end:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+
+
+
+
+global abs_f64
+abs_f64:
     endbr64
     push rbp
     mov rbp, rsp
@@ -2353,12 +2398,37 @@ fabs:
     movq xmm0, rax ; float64 left
     movq xmm1, rcx ; float64 right
     ucomisd xmm0, xmm1
-    setb al
+    sete al
     movzx rax, al
     push rax ; float comparison result
     pop rax ; condition value
     test rax, rax
     jz _if_30_end
+    mov rax, 0x0000000000000000 ; float64 literal 0
+    push rax ; float64 literal bits
+    pop rax ; put ret value in rax
+    jmp _abs_f64_end ; return
+_if_30_end:
+    lea rax, [rbp-8] ; address of local x
+    mov rax, qword [rax] ; x float64 raw bits
+    push rax ; x
+    mov rax, 0x0000000000000000 ; float64 literal 0
+    push rax ; float64 literal bits
+    pop rcx ; float binary right bits
+    pop rax ; float binary left bits
+    push rax ; restore left for float helper
+    push rcx ; restore right for float helper
+    pop rcx ; float binary right bits
+    pop rax ; float binary left bits
+    movq xmm0, rax ; float64 left
+    movq xmm1, rcx ; float64 right
+    ucomisd xmm0, xmm1
+    setb al
+    movzx rax, al
+    push rax ; float comparison result
+    pop rax ; condition value
+    test rax, rax
+    jz _if_31_end
     lea rax, [rbp-8] ; address of local x
     mov rax, qword [rax] ; x float64 raw bits
     push rax ; x
@@ -2369,14 +2439,14 @@ fabs:
     movq rax, xmm1 ; float64 neg result
     push rax ; unary neg result
     pop rax ; put ret value in rax
-    jmp _fabs_end ; return
-_if_30_end:
+    jmp _abs_f64_end ; return
+_if_31_end:
     lea rax, [rbp-8] ; address of local x
     mov rax, qword [rax] ; x float64 raw bits
     push rax ; x
     pop rax ; put ret value in rax
-    jmp _fabs_end ; return
-_fabs_end:
+    jmp _abs_f64_end ; return
+_abs_f64_end:
     mov rsp, rbp
     pop rbp
     ret
@@ -2411,7 +2481,7 @@ sqrt:
     push rax ; float comparison result
     pop rax ; condition value
     test rax, rax
-    jz _if_31_end
+    jz _if_32_end
     mov rax, 0x0000000000000000 ; float64 literal 0
     push rax ; float64 literal bits
     pop rax ; extract initializer expr
@@ -2435,7 +2505,7 @@ sqrt:
     push rax ; float64 binary result
     pop rax ; put ret value in rax
     jmp _sqrt_end ; return
-_if_31_end:
+_if_32_end:
     lea rax, [rbp-8] ; address of local x
     mov rax, qword [rax] ; x float64 raw bits
     push rax ; x
@@ -2450,26 +2520,26 @@ _if_31_end:
     push rax ; binary result
     pop rax ; cast source value
     test rax, rax ; u64 -> float64
-    jns _u64_to_float_32_small
+    jns _u64_to_float_33_small
     mov rcx, rax ; save u64 source
     and rax, 1 ; low bit
     shr rcx, 1 ; x >> 1
     or rcx, rax ; rounded half
     cvtsi2sd xmm0, rcx ; half as float64
     addsd xmm0, xmm0 ; restore magnitude
-    jmp _u64_to_float_32_done
-_u64_to_float_32_small:
+    jmp _u64_to_float_33_done
+_u64_to_float_33_small:
     cvtsi2sd xmm0, rax ; signed-safe u64 -> float64
-_u64_to_float_32_done:
+_u64_to_float_33_done:
     movq rax, xmm0 ; float64 result bits
     push rax ; cast result to Builtin(Float64)
     pop rax ; extract initializer expr
     mov qword [rbp-24], rax ; x0
-_while_33_start:
+_while_34_start:
     push qword 1 ; bool literal
     pop rax ; condition value
     test rax, rax
-    jz _while_33_end
+    jz _while_34_end
     lea rax, [rbp-24] ; address of local x0
     mov rax, qword [rax] ; x0 float64 raw bits
     push rax ; x0
@@ -2522,7 +2592,7 @@ _while_33_start:
     and rsp, -16
     sub rsp, 16
     mov [rsp], r10
-    call fabs
+    call abs_f64
     mov rsp, [rsp] ; restore caller rsp after call
     push rax ; call result
     pop rax ; extract initializer expr
@@ -2566,17 +2636,239 @@ _while_33_start:
     push rax ; float comparison result
     pop rax ; condition value
     test rax, rax
-    jz _if_34_end
-    jmp _while_33_end ; break
-_if_34_end:
-    jmp _while_33_start
-_while_33_end:
+    jz _if_35_end
+    jmp _while_34_end ; break
+_if_35_end:
+    jmp _while_34_start
+_while_34_end:
     lea rax, [rbp-24] ; address of local x0
     mov rax, qword [rax] ; x0 float64 raw bits
     push rax ; x0
     pop rax ; put ret value in rax
     jmp _sqrt_end ; return
 _sqrt_end:
+    mov rsp, rbp
+    pop rbp
+    ret
+
+
+
+
+
+global memcpy
+memcpy:
+    endbr64
+    push rbp
+    mov rbp, rsp
+    sub rsp, 48 ; function locals
+    mov qword [rbp-8], rdi ; function parameter source
+    mov qword [rbp-16], rsi ; function parameter dest
+    mov qword [rbp-24], rdx ; function parameter size
+    lea rax, [rbp-16] ; address of local dest
+    mov rax, qword [rax] ; dest
+    push rax ; dest
+    pop rax ; cast source value
+    push rax ; cast result to Pointer(Builtin(Char))
+    pop rax ; extract initializer expr
+    mov qword [rbp-32], rax ; d
+    lea rax, [rbp-8] ; address of local source
+    mov rax, qword [rax] ; source
+    push rax ; source
+    pop rax ; cast source value
+    push rax ; cast result to Pointer(Builtin(Char))
+    pop rax ; extract initializer expr
+    mov qword [rbp-40], rax ; s
+_while_36_start:
+    lea rax, [rbp-24] ; address of local size
+    mov rax, qword [rax] ; size
+    push rax ; size
+    push qword 64 ; int literal
+    pop rcx ; binary right
+    pop rax ; binary left
+    cmp rax, rcx
+    setae al
+    movzx rax, al
+    push rax ; binary result
+    pop rax
+    test rax, rax
+    jz _logical_and_38_false
+    lea rax, [rbp-32] ; address of local d
+    mov rax, qword [rax] ; d
+    push rax ; d
+    pop rax ; cast source value
+    push rax ; cast result to Builtin(Uint64)
+    push qword 64 ; int literal
+    pop rcx ; binary right
+    pop rax ; binary left
+    xor rdx, rdx
+    div rcx
+    mov rax, rdx
+    push rax ; binary result
+    push qword 0 ; int literal
+    pop rcx ; binary right
+    pop rax ; binary left
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    push rax ; binary result
+    pop rax
+    test rax, rax
+    jz _logical_and_38_false
+    push qword 1
+    jmp _logical_and_38_end
+_logical_and_38_false:
+    push qword 0
+_logical_and_38_end:
+    pop rax
+    test rax, rax
+    jz _logical_and_37_false
+    lea rax, [rbp-40] ; address of local s
+    mov rax, qword [rax] ; s
+    push rax ; s
+    pop rax ; cast source value
+    push rax ; cast result to Builtin(Uint64)
+    push qword 64 ; int literal
+    pop rcx ; binary right
+    pop rax ; binary left
+    xor rdx, rdx
+    div rcx
+    mov rax, rdx
+    push rax ; binary result
+    push qword 0 ; int literal
+    pop rcx ; binary right
+    pop rax ; binary left
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    push rax ; binary result
+    pop rax
+    test rax, rax
+    jz _logical_and_37_false
+    push qword 1
+    jmp _logical_and_37_end
+_logical_and_37_false:
+    push qword 0
+_logical_and_37_end:
+    pop rax ; condition value
+    test rax, rax
+    jz _while_36_end
+    lea rax, [rbp-32] ; address of local d
+    mov rax, qword [rax] ; d
+    push rax ; d
+    pop rax ; cast source value
+    push rax ; cast result to Pointer(Builtin(Uint64))
+    pop rax ; pointer value used as address
+    push rax ; assignment destination address
+    lea rax, [rbp-40] ; address of local s
+    mov rax, qword [rax] ; s
+    push rax ; s
+    pop rax ; cast source value
+    push rax ; cast result to Pointer(Builtin(Uint64))
+    pop rax ; deref pointer
+    mov rax, qword [rax] ; dereference
+    push rax ; dereference result
+    pop rax ; assignment value
+    pop rcx ; assignment destination address
+    mov qword [rcx], rax
+    push rax ; assignment result
+    pop rax ; discard expr
+    lea rax, [rbp-32] ; &d
+    push rax ; assignment destination address
+    lea rax, [rbp-32] ; address of local d
+    mov rax, qword [rax] ; d
+    push rax ; d
+    pop rax ; cast source value
+    push rax ; cast result to Builtin(Uint64)
+    push qword 64 ; int literal
+    pop rcx ; binary right
+    pop rax ; binary left
+    add rax, rcx
+    push rax ; binary result
+    pop rax ; cast source value
+    push rax ; cast result to Pointer(Builtin(Char))
+    pop rax ; assignment value
+    pop rcx ; assignment destination address
+    mov qword [rcx], rax
+    push rax ; assignment result
+    pop rax ; discard expr
+    lea rax, [rbp-40] ; &s
+    push rax ; assignment destination address
+    lea rax, [rbp-40] ; address of local s
+    mov rax, qword [rax] ; s
+    push rax ; s
+    pop rax ; cast source value
+    push rax ; cast result to Builtin(Uint64)
+    push qword 64 ; int literal
+    pop rcx ; binary right
+    pop rax ; binary left
+    add rax, rcx
+    push rax ; binary result
+    pop rax ; cast source value
+    push rax ; cast result to Pointer(Builtin(Char))
+    pop rax ; assignment value
+    pop rcx ; assignment destination address
+    mov qword [rcx], rax
+    push rax ; assignment result
+    pop rax ; discard expr
+    lea rax, [rbp-24] ; &size
+    push rax ; compound assignment destination address
+    mov rcx, rax ; load compound left value
+    mov rax, qword [rcx]
+    push rax ; compound assignment left value
+    push qword 64 ; int literal
+    pop r10 ; compound assignment right value
+    pop rax ; compound assignment left value
+    pop rcx ; compound assignment destination address
+    sub rax, r10
+    mov qword [rcx], rax
+    push rax ; compound assignment result
+    pop rax ; discard expr
+    jmp _while_36_start
+_while_36_end:
+_while_39_start:
+    lea rax, [rbp-24] ; address of local size
+    mov rax, qword [rax] ; size
+    push rax ; size
+    pop rax ; condition value
+    test rax, rax
+    jz _while_39_end
+    lea rax, [rbp-32] ; &d
+    mov rcx, rax ; postfix address
+    mov rax, qword [rcx]
+    push rax ; postfix old value
+    inc rax
+    mov qword [rcx], rax
+    pop rax ; pointer value used as address
+    push rax ; assignment destination address
+    lea rax, [rbp-40] ; &s
+    mov rcx, rax ; postfix address
+    mov rax, qword [rcx]
+    push rax ; postfix old value
+    inc rax
+    mov qword [rcx], rax
+    pop rax ; deref pointer
+    movsx rax, byte [rax] ; dereference
+    push rax ; dereference result
+    pop rax ; assignment value
+    pop rcx ; assignment destination address
+    mov byte [rcx], al
+    push rax ; assignment result
+    pop rax ; discard expr
+    lea rax, [rbp-24] ; &size
+    mov rcx, rax ; postfix address
+    mov rax, qword [rcx]
+    push rax ; postfix old value
+    dec rax
+    mov qword [rcx], rax
+    pop rax ; discard expr
+    jmp _while_39_start
+_while_39_end:
+    lea rax, [rbp-16] ; address of local dest
+    mov rax, qword [rax] ; dest
+    push rax ; dest
+    pop rax ; put ret value in rax
+    jmp _memcpy_end ; return
+_memcpy_end:
     mov rsp, rbp
     pop rbp
     ret
@@ -2604,7 +2896,7 @@ srand:
     push rax ; binary result
     pop rax ; condition value
     test rax, rax
-    jz _if_35_end
+    jz _if_40_end
     lea rax, [rbp-8] ; &seed
     push rax ; assignment destination address
     push qword 67676767 ; int literal
@@ -2613,7 +2905,7 @@ srand:
     mov qword [rcx], rax
     push rax ; assignment result
     pop rax ; discard expr
-_if_35_end:
+_if_40_end:
     lea rax, [rel __random_rand_state] ; &__random_rand_state
     push rax ; assignment destination address
     lea rax, [rbp-8] ; address of local seed
@@ -2627,7 +2919,7 @@ _if_35_end:
     push qword 0 ; int literal
     pop rax ; extract initializer expr
     mov dword [rbp-12], eax ; i
-_for_36_start:
+_for_41_start:
     lea rax, [rbp-12] ; address of local i
     movsxd rax, dword [rax] ; i
     push rax ; i
@@ -2640,7 +2932,7 @@ _for_36_start:
     push rax ; binary result
     pop rax ; condition value
     test rax, rax
-    jz _for_36_end
+    jz _for_41_end
     mov r10, rsp ; save caller rsp before call
     and rsp, -16
     sub rsp, 16
@@ -2649,7 +2941,7 @@ _for_36_start:
     mov rsp, [rsp] ; restore caller rsp after call
     push rax ; call result
     pop rax ; discard expr
-_for_36_step:
+_for_41_step:
     lea rax, [rbp-12] ; &i
     mov rcx, rax ; postfix address
     movsxd rax, dword [rcx]
@@ -2657,8 +2949,8 @@ _for_36_step:
     inc rax
     mov dword [rcx], eax
     pop rax ; discard for step expr
-    jmp _for_36_start
-_for_36_end:
+    jmp _for_41_start
+_for_41_end:
 _srand_end:
     mov rsp, rbp
     pop rbp
@@ -2691,7 +2983,7 @@ srand_hw:
     push qword 0 ; int literal
     pop rax ; extract initializer expr
     mov dword [rbp-4], eax ; i
-_for_37_start:
+_for_42_start:
     lea rax, [rbp-4] ; address of local i
     movsxd rax, dword [rax] ; i
     push rax ; i
@@ -2704,7 +2996,7 @@ _for_37_start:
     push rax ; binary result
     pop rax ; condition value
     test rax, rax
-    jz _for_37_end
+    jz _for_42_end
     mov r10, rsp ; save caller rsp before call
     and rsp, -16
     sub rsp, 16
@@ -2713,7 +3005,7 @@ _for_37_start:
     mov rsp, [rsp] ; restore caller rsp after call
     push rax ; call result
     pop rax ; discard expr
-_for_37_step:
+_for_42_step:
     lea rax, [rbp-4] ; &i
     mov rcx, rax ; postfix address
     movsxd rax, dword [rcx]
@@ -2721,8 +3013,8 @@ _for_37_step:
     inc rax
     mov dword [rcx], eax
     pop rax ; discard for step expr
-    jmp _for_37_start
-_for_37_end:
+    jmp _for_42_start
+_for_42_end:
 _srand_hw_end:
     mov rsp, rbp
     pop rbp
@@ -2896,16 +3188,6 @@ main:
     endbr64
     push rbp
     mov rbp, rsp
-    push qword 1 ; bool literal
-    pop rdi ; call argument 0
-    mov r10, rsp ; save caller rsp before call
-    and rsp, -16
-    sub rsp, 16
-    mov [rsp], r10
-    call print_bool_ln
-    mov rsp, [rsp] ; restore caller rsp after call
-    push rax ; call result
-    pop rax ; discard expr
     push qword 0 ; int literal
     pop rax ; put ret value in rax
     jmp _main_end ; return

@@ -1,6 +1,7 @@
 #once
 #include:io.vel
 #include:math.vel
+#include:memory.vel
 #include:random.vel
 #include:stdlib.vel
 #include:string.vel

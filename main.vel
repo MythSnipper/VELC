@@ -5,9 +5,6 @@ char buf[INPUT_BUFFER_SIZE];
 
 uint64 main() {
 
-    print_bool_ln(true);
-
-
     return 0;
 }
 

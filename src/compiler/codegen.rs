@@ -882,7 +882,6 @@ impl CodeGenerator {
         }
     }
 
-
     //for emit_var and exprs
     fn emit_expr_as_type(&mut self, target_type: &TypeName, expr: &Expr) -> Result<TypeName, String> {
         match (target_type, expr) {

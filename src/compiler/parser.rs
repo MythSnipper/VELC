@@ -197,9 +197,6 @@ pub enum Stmt {
     Empty,
 }
 
-
-
-
 //Expressions
 #[derive(Debug, Clone)]
 pub enum Expr {
@@ -1583,10 +1580,8 @@ impl Parser {
         Ok(ty)
     }
 
-
     fn error<T>(&self, base: &str, err: &str) -> Result<T, String> {
         Err(format!("{base}:{err} \nCurrent token:\n\tType {:?}\n\tPosition {}:{}", self.get().Type, self.get().Span.row, self.get().Span.col))
     }
-
 
 }

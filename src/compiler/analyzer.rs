@@ -404,9 +404,6 @@ impl Analyzer {
         }
     }
     
-
-
-
     fn is_assignable_expr(&self, expr: &Expr) -> bool {
         match expr {
             Expr::Identifier(_) => true,

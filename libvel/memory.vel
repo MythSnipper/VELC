@@ -1,0 +1,22 @@
+#once
+
+void* memcpy(void* source, void* dest, uint64 size){
+    char* d = (char*) dest;
+    char* s = (char*) source;
+    while (size >= 64 &&
+          ((uint64)d % 64 == 0) &&
+          ((uint64)s % 64 == 0)
+          ){
+        *(uint64*)d = *(uint64*)s;
+        d = (char*)((uint64)d + 64);
+        s = (char*)((uint64)s + 64);
+        size -= 64;
+    }
+    // Copy remaining bytes one by one
+    while (size) {
+        *d++ = *s++;
+        size--;
+    }
+    return dest;
+}
+

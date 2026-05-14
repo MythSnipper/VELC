@@ -110,10 +110,6 @@ int64 strcmp(string str1, string str2) {
 
 
 
-
-
-
-
 //print functions
 void print_char(char out) {
     sys_write(1, &out, 1); //write 1 char to stdout
@@ -309,7 +305,6 @@ void print_float32_ln(float32 value) {
 
 
 
-
 int64 input(char* buf, uint64 buf_size) {
     int64 n = sys_read(0, buf, buf_size - 1); //reserve for null terminator
 
@@ -327,7 +322,6 @@ int64 input(char* buf, uint64 buf_size) {
 
     return n;
 }
-
 
 
 

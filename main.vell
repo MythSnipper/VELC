@@ -111,10 +111,6 @@ int64 strcmp(string str1, string str2) {
 
 
 
-
-
-
-
 //print functions
 void print_char(char out) {
     sys_write(1, &out, 1); //write 1 char to stdout
@@ -310,7 +306,6 @@ void print_float32_ln(float32 value) {
 
 
 
-
 int64 input(char* buf, uint64 buf_size) {
     int64 n = sys_read(0, buf, buf_size - 1); //reserve for null terminator
 
@@ -337,12 +332,35 @@ int64 input(char* buf, uint64 buf_size) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 bool isnan(float64 x) {
     return x == -9223372036854775808.0;
 }
 
 
-float64 fabs(float64 x) {
+int64 abs_i64(int64 x) {
+    int64 y = x >> 63;
+    return (x ^ y) - y;
+}
+
+float64 abs_f64(float64 x) {
+    if (x == 0.0) {
+        return 0.0;
+    }
+
     if(x < 0.0) {
         return -x;
     }
@@ -351,29 +369,73 @@ float64 fabs(float64 x) {
 
 
 
+
+
 float64 sqrt(float64 x) {
     if(x < 0.0) {
-        float64 n = 0.0;
-        return n/n;
+        return -9223372036854775808.0;
     }
+    if(x == 0.0) {
+        return 0.0;
+    }
+
     float64 x0 = (float64)((uint64)x >> 1);
 
-    while(true) {
-        float64 x1 = (x0 + (x / x0)) * 0.5;
+    float64 r = x;
+    float64 scale = 1.0;
 
-        float64 diff = fabs(x1 - x0);
+    while (r >= 4.0) {
+        r *= 0.25;
+        scale *= 2.0;
+    }
+
+    while (r < 1.0) {
+        r *= 4.0;
+        scale *= 0.5;
+    }
+
+    float64 x0 = r;
+
+    for (int i = 0; i < 100; i++) {
+        float64 x1 = 0.5 * (x0 + r / x0);
+
+        float64 diff = abs_f64(x1 - x0);
 
         x0 = x1;
-        if(diff <= 0.000000000000001 * x1) {
+
+        if (diff <= 0.000000000000001 * x0) {
             break;
         }
     }
-    return x0;
+
+    return x0 * scale;
 }
 
 
 
 
+
+
+
+void* memcpy(void* source, void* dest, uint64 size){
+    char* d = (char*) dest;
+    char* s = (char*) source;
+    while (size >= 64 &&
+          ((uint64)d % 64 == 0) &&
+          ((uint64)s % 64 == 0)
+          ){
+        *(uint64*)d = *(uint64*)s;
+        d = (char*)((uint64)d + 64);
+        s = (char*)((uint64)s + 64);
+        size -= 64;
+    }
+    // Copy remaining bytes one by one
+    while (size) {
+        *d++ = *s++;
+        size--;
+    }
+    return dest;
+}
 
 
 
@@ -439,9 +501,6 @@ uint64 rand_range(uint64 min, uint64 max) {
 char buf[1024];
 
 uint64 main() {
-
-    print_bool_ln(true);
-
 
     return 0;
 }

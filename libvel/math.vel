@@ -1,12 +1,37 @@
 #once
 #include:io.vel
 
+#define INT8_MIN -127-1
+#define INT8_MAX 127
+#define INT16_MIN -32767-1
+#define INT16_MAX 32767
+#define INT32_MIN -2147483647-1
+#define INT32_MAX 2147483647
+#define INT64_MIN -9223372036854775807-1
+#define INT64_MAX 9223372036854775807
+
+#define UINT8_MAX 255
+#define UINT16_MAX 65535
+#define UINT32_MAX 4294967295
+#define UINT64_MAX 18446744073709551615
+
+
 #define NaN -9223372036854775808.0
 bool isnan(float64 x) {
     return x == NaN;
 }
 
-float64 fabs(float64 x) {
+
+int64 abs_i64(int64 x) {
+    int64 y = x >> 63;
+    return (x ^ y) - y;
+}
+
+float64 abs_f64(float64 x) {
+    if (x == 0.0) {
+        return 0.0;
+    }
+
     if(x < 0.0) {
         return -x;
     }
@@ -14,18 +39,23 @@ float64 fabs(float64 x) {
 }
 
 
+
+
 #define EPS 0.000000000000001
 float64 sqrt(float64 x) {
     if(x < 0.0) {
-        float64 n = 0.0;
-        return n/n;
+        return NaN;
     }
+    if(x == 0.0) {
+        return 0.0;
+    }
+
     float64 x0 = (float64)((uint64)x >> 1);
 
     while(true) {
         float64 x1 = (x0 + (x / x0)) * 0.5;
 
-        float64 diff = fabs(x1 - x0);
+        float64 diff = abs_f64(x1 - x0);
 
         x0 = x1;
         if(diff <= EPS * x1) {
