@@ -1,4 +1,5 @@
 #once
+#include:char.vel
 #include:io.vel
 #include:math.vel
 #include:memory.vel

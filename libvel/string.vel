@@ -55,4 +55,40 @@ int64 strcmp(string str1, string str2) {
 }
 
 
+int64 parse_int(string x) {
+    char* source = (char*)x;
+    uint64 len = strlen(x);
+
+    for(uint64 i=0;i<len;i++) {
+        char curr = source[i];
+    }
+    return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

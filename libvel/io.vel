@@ -2,7 +2,11 @@
 #include:sys.vel
 #include:string.vel
 
-//print functions
+//functions that does input and output
+
+
+
+//writes a char to stdout
 void print_char(char out) {
     sys_write(1, &out, 1); //write 1 char to stdout
 }
@@ -11,6 +15,7 @@ void print_char_ln(char out) {
     print_char('\n');
 }
 
+//writes a string to stdout
 void print(string str) {
     sys_write(1, (char*)str, strlen(str)); //write string to stdout
 }
@@ -19,6 +24,7 @@ void println(string str) {
     print_char('\n');
 }
 
+//writes an uint64 to stdout
 void print_uint64(uint64 num) {
     char buf[20];
     uint64 i = 20;
@@ -41,6 +47,7 @@ void print_uint64_ln(uint64 num) {
     print_char('\n');
 }
 
+//writes a int64 to stdout
 void print_int64(int64 num) {
     if(num < 0) {
         print_char('-');
@@ -55,6 +62,7 @@ void print_int64_ln(int64 num) {
     print_char('\n');
 }
 
+//writes a bool to stdout as text
 void print_bool(bool value) {
     if(value) {
         sys_write(1, (char*)"true", 4);
@@ -68,7 +76,7 @@ void print_bool_ln(bool value) {
     print_char('\n');
 }
 
-
+//writes a uint64 to stdout as hex
 void print_hex(uint64 value) {
     char buf[16];
     uint64 i = 16;
