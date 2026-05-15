@@ -5,7 +5,6 @@
 //functions that does input and output
 
 
-
 //writes a char to stdout
 void print_char(char out) {
     sys_write(1, &out, 1); //write 1 char to stdout
@@ -25,7 +24,7 @@ void println(string str) {
 }
 
 //writes an uint64 to stdout
-void print_uint64(uint64 num) {
+void print_u64(uint64 num) {
     char buf[20];
     uint64 i = 20;
 
@@ -42,23 +41,23 @@ void print_uint64(uint64 num) {
 
     sys_write(1, &buf[i], 20 - i);
 }
-void print_uint64_ln(uint64 num) {
-    print_uint64(num);
+void print_u64_ln(uint64 num) {
+    print_u64(num);
     print_char('\n');
 }
 
 //writes a int64 to stdout
-void print_int64(int64 num) {
+void print_i64(int64 num) {
     if(num < 0) {
         print_char('-');
-        print_uint64((uint64)(0-num));
+        print_u64((uint64)(0-num));
     }
     else{
-        print_uint64((uint64)num);
+        print_u64((uint64)num);
     }
 }
-void print_int64_ln(int64 num) {
-    print_int64(num);
+void print_i64_ln(int64 num) {
+    print_i64(num);
     print_char('\n');
 }
 
@@ -110,7 +109,7 @@ void print_hex_ln(uint64 value) {
     print_char('\n');
 }
 
-void print_float64_prec(float64 value, uint64 precision) {
+void print_f64_prec(float64 value, uint64 precision) {
     if(value < 0.0) { //handle negative
         print_char('-');
         value = 0.0 - value;
@@ -124,7 +123,7 @@ void print_float64_prec(float64 value, uint64 precision) {
     value += rounder;
 
     uint64 whole = (uint64)value;
-    print_uint64(whole);
+    print_u64(whole);
 
     if(precision == 0) { //no decimal places after integer
         return;
@@ -146,15 +145,15 @@ void print_float64_prec(float64 value, uint64 precision) {
     }
 }
 
-void print_float64(float64 value) {
-    print_float64_prec(value, 17);
+void print_f64(float64 value) {
+    print_f64_prec(value, 17);
 }
-void print_float64_ln(float64 value) {
-    print_float64(value);
+void print_f64_ln(float64 value) {
+    print_f64(value);
     print_char('\n');
 }
 
-void print_float32_prec(float32 value, uint64 precision) {
+void print_f32_prec(float32 value, uint64 precision) {
     if(value < 0.0) {
         print_char('-');
         value = 0.0 - value;
@@ -170,7 +169,7 @@ void print_float32_prec(float32 value, uint64 precision) {
     value += rounder;
 
     uint64 whole = (uint64)value;
-    print_uint64(whole);
+    print_u64(whole);
 
     if(precision == 0) {
         return;
@@ -194,11 +193,11 @@ void print_float32_prec(float32 value, uint64 precision) {
     }
 }
 
-void print_float32(float32 value) {
-    print_float32_prec(value, 6);
+void print_f32(float32 value) {
+    print_f32_prec(value, 6);
 }
-void print_float32_ln(float32 value) {
-    print_float32(value);
+void print_f32_ln(float32 value) {
+    print_f32(value);
     print_char('\n');
 }
 

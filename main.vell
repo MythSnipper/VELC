@@ -1,6 +1,102 @@
 
 
 
+//functions that operate and classify characters
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void donut_run() {
+    float64 A = 0.0;
+    float64 B = 0.0;
+    float64 i;
+    float64 j;
+
+    int64 k;
+
+    float64 z[1760];
+    char b[1760];
+
+    char Z[12];
+    memcpy((void*)Z, (void*)".,-~:;=!*#$@", 12);
+
+    print_char(27);
+    print("[2J");
+
+    for(;;) {
+        memset((void*)b,32,1760);
+        memset((void*)z,0,14080);
+        for(j=0.0; j < 6.28; j += 0.07) {
+            for(i=0.0; i < 6.28; i += 0.02) {
+                float64 c = sin_f64(i);
+                float64 d = cos_f64(j);
+                float64 e = sin_f64(A);
+                float64 f = sin_f64(j);
+                float64 g = cos_f64(A);
+                float64 h = d + 2.0;
+                float64 D = 1.0 / (c * h * e + f * g + 5.0);
+                float64 l = cos_f64(i);
+                float64 m = cos_f64(B);
+                float64 n = sin_f64(B);
+                float64 t = c * h * g - f * e;
+                
+                int64 x = (int64)(40.0 + 30.0 * D * (l * h * m - t * n));
+                
+                int64 y = (int64)(12.0 + 15.0 * D * (l * h * n + t * m));
+                
+                int64 o = (x + 80 * y);
+                
+                int64 N = (int64)(8.0 * ((f * e - c * d * g) * m - c * d * e - f * g - l * d * n));
+                
+                if(22 > y && y > 0 && x > 0 && 80 > x && D > z[o]) {
+                    z[o] = D;
+                    if(N > 0) {
+                        b[o] = Z[N];
+                    }
+                    else {
+                        b[o] = Z[0]; 
+                    }
+                }
+                
+            }
+        }
+        
+        print_char(27);
+        print("[H");
+        for(k = 0; k < 1761; k++) {
+            if(k % 80) {
+                print_char(b[k]);
+            }
+            else {
+                print_char(10);
+            }
+            A += 0.00004;
+            B += 0.00002;
+        }
+    }
+    return;
+}
+
+
+
+//contains functions that work with files i guess
+
+
+
+
 
 int64 sys_read(uint64 fd, char* buf, uint64 count) {
     int64 ret = 0;
@@ -115,9 +211,6 @@ int64 parse_int(string x) {
 
     for(uint64 i=0;i<len;i++) {
         char curr = source[i];
-
-        print("char: ");
-        print_char_ln(curr);
     }
     return 0;
 }
@@ -130,7 +223,30 @@ int64 parse_int(string x) {
 
 
 
-//print functions
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//functions that does input and output
+
+
+//writes a char to stdout
 void print_char(char out) {
     sys_write(1, &out, 1); //write 1 char to stdout
 }
@@ -139,6 +255,7 @@ void print_char_ln(char out) {
     print_char('\n');
 }
 
+//writes a string to stdout
 void print(string str) {
     sys_write(1, (char*)str, strlen(str)); //write string to stdout
 }
@@ -147,7 +264,8 @@ void println(string str) {
     print_char('\n');
 }
 
-void print_uint64(uint64 num) {
+//writes an uint64 to stdout
+void print_u64(uint64 num) {
     char buf[20];
     uint64 i = 20;
 
@@ -164,25 +282,27 @@ void print_uint64(uint64 num) {
 
     sys_write(1, &buf[i], 20 - i);
 }
-void print_uint64_ln(uint64 num) {
-    print_uint64(num);
+void print_u64_ln(uint64 num) {
+    print_u64(num);
     print_char('\n');
 }
 
-void print_int64(int64 num) {
+//writes a int64 to stdout
+void print_i64(int64 num) {
     if(num < 0) {
         print_char('-');
-        print_uint64((uint64)(0-num));
+        print_u64((uint64)(0-num));
     }
     else{
-        print_uint64((uint64)num);
+        print_u64((uint64)num);
     }
 }
-void print_int64_ln(int64 num) {
-    print_int64(num);
+void print_i64_ln(int64 num) {
+    print_i64(num);
     print_char('\n');
 }
 
+//writes a bool to stdout as text
 void print_bool(bool value) {
     if(value) {
         sys_write(1, (char*)"true", 4);
@@ -196,7 +316,7 @@ void print_bool_ln(bool value) {
     print_char('\n');
 }
 
-
+//writes a uint64 to stdout as hex
 void print_hex(uint64 value) {
     char buf[16];
     uint64 i = 16;
@@ -230,7 +350,7 @@ void print_hex_ln(uint64 value) {
     print_char('\n');
 }
 
-void print_float64_prec(float64 value, uint64 precision) {
+void print_f64_prec(float64 value, uint64 precision) {
     if(value < 0.0) { //handle negative
         print_char('-');
         value = 0.0 - value;
@@ -244,7 +364,7 @@ void print_float64_prec(float64 value, uint64 precision) {
     value += rounder;
 
     uint64 whole = (uint64)value;
-    print_uint64(whole);
+    print_u64(whole);
 
     if(precision == 0) { //no decimal places after integer
         return;
@@ -266,15 +386,15 @@ void print_float64_prec(float64 value, uint64 precision) {
     }
 }
 
-void print_float64(float64 value) {
-    print_float64_prec(value, 17);
+void print_f64(float64 value) {
+    print_f64_prec(value, 17);
 }
-void print_float64_ln(float64 value) {
-    print_float64(value);
+void print_f64_ln(float64 value) {
+    print_f64(value);
     print_char('\n');
 }
 
-void print_float32_prec(float32 value, uint64 precision) {
+void print_f32_prec(float32 value, uint64 precision) {
     if(value < 0.0) {
         print_char('-');
         value = 0.0 - value;
@@ -290,7 +410,7 @@ void print_float32_prec(float32 value, uint64 precision) {
     value += rounder;
 
     uint64 whole = (uint64)value;
-    print_uint64(whole);
+    print_u64(whole);
 
     if(precision == 0) {
         return;
@@ -314,11 +434,11 @@ void print_float32_prec(float32 value, uint64 precision) {
     }
 }
 
-void print_float32(float32 value) {
-    print_float32_prec(value, 6);
+void print_f32(float32 value) {
+    print_f32_prec(value, 6);
 }
-void print_float32_ln(float32 value) {
-    print_float32(value);
+void print_f32_ln(float32 value) {
+    print_f32(value);
     print_char('\n');
 }
 
@@ -388,8 +508,6 @@ float64 abs_f64(float64 x) {
 
 
 
-
-
 float64 sqrt(float64 x) {
     if(x < 0.0) {
         return -9223372036854775808.0;
@@ -418,8 +536,136 @@ float64 sqrt(float64 x) {
 
 
 
+//returns angle constrained to [-pi, pi]
+float64 constrain_angle(float64 x) {
+    while(x > 3.14159265358979323846264338327950288) {
+        x -= 6.28318530717958647692528676655900576;
+    }
 
-void* memcpy(void* source, void* dest, uint64 size){
+    while(x < -3.14159265358979323846264338327950288) {
+        x += 6.28318530717958647692528676655900576;
+    }
+
+    return x;
+}
+
+
+//sin using taylor series
+/{
+    sin(x) = x - (x^3 / 3!) + (x^5 / 5!) - (x^7 / 7!) ...
+}/
+float64 sin_f64(float64 x) {
+    x = constrain_angle(x);
+
+    /{
+        sin(x) =  sin(π - x)   for x >  π/2
+        sin(x) = -sin(-π - x)  for x < -π/2
+        reduces x into [-π/2, π/2].
+    }/
+    if (x > 1.57079632679489661923132169163975144) {
+        x = 3.14159265358979323846264338327950288 - x;
+    }
+    else if (x < -1.57079632679489661923132169163975144) {
+        x = -3.14159265358979323846264338327950288 - x;
+    }
+
+    float64 x2 = x * x;
+    /{
+        Taylor approximation:
+
+        sin(x) ≈ x
+               - x^3 / 6
+               + x^5 / 120
+               - x^7 / 5040
+               + x^9 / 362880
+               - x^11 / 39916800
+    }/
+    return x * (
+        1.0
+        + x2 * (
+            -1.0 / 6.0
+            + x2 * (
+                1.0 / 120.0
+                + x2 * (
+                    -1.0 / 5040.0
+                    + x2 * (
+                        1.0 / 362880.0
+                        + x2 * (-1.0 / 39916800.0)
+                    )
+                )
+            )
+        )
+    );
+}
+
+
+//cos using taylor series
+float64 cos_f64(float64 x) {
+    x = constrain_angle(x);
+
+    if(x < 0.0) {
+        x = -x;
+    }
+
+    int32 sign = 1;
+
+    if(x > 1.57079632679489661923132169163975144) {
+        x = 3.14159265358979323846264338327950288 - x;
+        sign = -1;
+    }
+
+    float64 x2 = x * x;
+    
+    //spam taylor series again for the cosine
+    float64 result =
+        1.0
+        + x2 * (
+            -1.0 / 2.0
+            + x2 * (
+                1.0 / 24.0
+                + x2 * (
+                    -1.0 / 720.0
+                    + x2 * (
+                        1.0 / 40320.0
+                        + x2 * (
+                            -1.0 / 3628800.0
+                            + x2 * (1.0 / 479001600.0)
+                        )
+                    )
+                )
+            )
+        );
+
+    if(sign < 0) {
+        result = -result;
+    }
+
+    return result;
+}
+
+
+float64 tan_f64(float64 x) {
+    float64 s = sin_f64(x);
+    float64 c = cos_f64(x);
+
+    if(abs_f64(c) < 0.000000000000001) {
+        float64 z = 0.0;
+
+        if (s < 0.0) {
+            return -1.0 / z;
+        }
+
+        return 1.0 / z;
+    }
+
+    return s / c;
+}
+
+
+
+
+
+void* memcpy(void* dest, void* source, uint64 size) {
     char* d = (char*) dest;
     char* s = (char*) source;
     while (size >= 64 &&
@@ -438,6 +684,20 @@ void* memcpy(void* source, void* dest, uint64 size){
     }
     return dest;
 }
+
+void* memset(void* dest, int8 value, uint64 len) {
+    uint8* p = (uint8*)dest;
+    uint8 byte = (uint8)value;
+
+    while(len > 0) {
+        *p = byte;
+        p = (uint8*)((uint64)p + 1);
+        len--;
+    }
+    return dest;
+}
+
+
 
 
 
@@ -504,11 +764,7 @@ char buf[1024];
 
 uint64 main() {
 
-    parse_int("2839 wa");
-
-
-
-
+    donut_run();
 
     return 0;
 }

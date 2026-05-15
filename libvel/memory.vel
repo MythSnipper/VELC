@@ -1,6 +1,6 @@
 #once
 
-void* memcpy(void* source, void* dest, uint64 size){
+void* memcpy(void* dest, void* source, uint64 size) {
     char* d = (char*) dest;
     char* s = (char*) source;
     while (size >= 64 &&
@@ -19,4 +19,18 @@ void* memcpy(void* source, void* dest, uint64 size){
     }
     return dest;
 }
+
+void* memset(void* dest, int8 value, uint64 len) {
+    uint8* p = (uint8*)dest;
+    uint8 byte = (uint8)value;
+
+    while(len > 0) {
+        *p = byte;
+        p = (uint8*)((uint64)p + 1);
+        len--;
+    }
+    return dest;
+}
+
+
 

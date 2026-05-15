@@ -1,5 +1,7 @@
 #once
 #include:char.vel
+#include:donut.vel
+#include:file.vel
 #include:io.vel
 #include:math.vel
 #include:memory.vel

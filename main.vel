@@ -5,11 +5,7 @@ char buf[INPUT_BUFFER_SIZE];
 
 uint64 main() {
 
-    parse_int("2839 wa");
-
-
-
-
+    donut_run();
 
     return 0;
 }

@@ -39,9 +39,7 @@ float64 abs_f64(float64 x) {
 }
 
 
-
-
-#define EPS 0.000000000000001
+#define SQRT_EPS 0.000000000000001
 float64 sqrt(float64 x) {
     if(x < 0.0) {
         return NaN;
@@ -58,7 +56,7 @@ float64 sqrt(float64 x) {
         float64 diff = abs_f64(x1 - x0);
 
         x0 = x1;
-        if(diff <= EPS * x1) {
+        if(diff <= SQRT_EPS * x1) {
             break;
         }
     }
@@ -66,6 +64,134 @@ float64 sqrt(float64 x) {
 }
 
 
+#define PI 3.14159265358979323846264338327950288
+#define TAU 6.28318530717958647692528676655900576
+#define HALF_PI 1.57079632679489661923132169163975144
+
+//returns angle constrained to [-pi, pi]
+float64 constrain_angle(float64 x) {
+    while(x > PI) {
+        x -= TAU;
+    }
+
+    while(x < -PI) {
+        x += TAU;
+    }
+
+    return x;
+}
+
+
+//sin using taylor series
+/{
+    sin(x) = x - (x^3 / 3!) + (x^5 / 5!) - (x^7 / 7!) ...
+}/
+float64 sin_f64(float64 x) {
+    x = constrain_angle(x);
+
+    /{
+        sin(x) =  sin(π - x)   for x >  π/2
+        sin(x) = -sin(-π - x)  for x < -π/2
+        reduces x into [-π/2, π/2].
+    }/
+    if (x > HALF_PI) {
+        x = PI - x;
+    }
+    else if (x < -HALF_PI) {
+        x = -PI - x;
+    }
+
+    float64 x2 = x * x;
+    /{
+        Taylor approximation:
+
+        sin(x) ≈ x
+               - x^3 / 6
+               + x^5 / 120
+               - x^7 / 5040
+               + x^9 / 362880
+               - x^11 / 39916800
+    }/
+    return x * (
+        1.0
+        + x2 * (
+            -1.0 / 6.0
+            + x2 * (
+                1.0 / 120.0
+                + x2 * (
+                    -1.0 / 5040.0
+                    + x2 * (
+                        1.0 / 362880.0
+                        + x2 * (-1.0 / 39916800.0)
+                    )
+                )
+            )
+        )
+    );
+}
+
+
+//cos using taylor series
+float64 cos_f64(float64 x) {
+    x = constrain_angle(x);
+
+    if(x < 0.0) {
+        x = -x;
+    }
+
+    int32 sign = 1;
+
+    if(x > HALF_PI) {
+        x = PI - x;
+        sign = -1;
+    }
+
+    float64 x2 = x * x;
+    
+    //spam taylor series again for the cosine
+    float64 result =
+        1.0
+        + x2 * (
+            -1.0 / 2.0
+            + x2 * (
+                1.0 / 24.0
+                + x2 * (
+                    -1.0 / 720.0
+                    + x2 * (
+                        1.0 / 40320.0
+                        + x2 * (
+                            -1.0 / 3628800.0
+                            + x2 * (1.0 / 479001600.0)
+                        )
+                    )
+                )
+            )
+        );
+
+    if(sign < 0) {
+        result = -result;
+    }
+
+    return result;
+}
+
+#define TAN_EPS 0.000000000000001
+float64 tan_f64(float64 x) {
+    float64 s = sin_f64(x);
+    float64 c = cos_f64(x);
+
+    if(abs_f64(c) < TAN_EPS) {
+        float64 z = 0.0;
+
+        if (s < 0.0) {
+            return -1.0 / z;
+        }
+
+        return 1.0 / z;
+    }
+
+    return s / c;
+}
 
 
 

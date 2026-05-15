@@ -1,0 +1,72 @@
+#once
+
+void donut_run() {
+    float64 A = 0.0;
+    float64 B = 0.0;
+    float64 i;
+    float64 j;
+
+    int64 k;
+
+    float64 z[1760];
+    char b[1760];
+
+    char Z[12];
+    memcpy((void*)Z, (void*)".,-~:;=!*#$@", 12);
+
+    print_char(27);
+    print("[2J");
+
+    for(;;) {
+        memset((void*)b,32,1760);
+        memset((void*)z,0,14080);
+        for(j=0.0; j < 6.28; j += 0.07) {
+            for(i=0.0; i < 6.28; i += 0.02) {
+                float64 c = sin_f64(i);
+                float64 d = cos_f64(j);
+                float64 e = sin_f64(A);
+                float64 f = sin_f64(j);
+                float64 g = cos_f64(A);
+                float64 h = d + 2.0;
+                float64 D = 1.0 / (c * h * e + f * g + 5.0);
+                float64 l = cos_f64(i);
+                float64 m = cos_f64(B);
+                float64 n = sin_f64(B);
+                float64 t = c * h * g - f * e;
+                
+                int64 x = (int64)(40.0 + 30.0 * D * (l * h * m - t * n));
+                
+                int64 y = (int64)(12.0 + 15.0 * D * (l * h * n + t * m));
+                
+                int64 o = (x + 80 * y);
+                
+                int64 N = (int64)(8.0 * ((f * e - c * d * g) * m - c * d * e - f * g - l * d * n));
+                
+                if(22 > y && y > 0 && x > 0 && 80 > x && D > z[o]) {
+                    z[o] = D;
+                    if(N > 0) {
+                        b[o] = Z[N];
+                    }
+                    else {
+                        b[o] = Z[0]; 
+                    }
+                }
+                
+            }
+        }
+        
+        print_char(27);
+        print("[H");
+        for(k = 0; k < 1761; k++) {
+            if(k % 80) {
+                print_char(b[k]);
+            }
+            else {
+                print_char(10);
+            }
+            A += 0.00004;
+            B += 0.00002;
+        }
+    }
+    return;
+}
