@@ -6,9 +6,22 @@ char buf[INPUT_BUFFER_SIZE];
 uint64 main() {
 
     donut_run();
+    death();
 
     return 0;
 }
 
+
+void death(){
+    for(int64 i=-20;i<=20;i++){
+        float64 kill_me = (float64)i;
+        
+        float64 I_do_not = sin_f64(kill_me);
+        float64 deserve_to = sin_fast_f64(kill_me);
+        float64 live = deserve_to - I_do_not;
+
+        print_f64_ln(live);
+    }
+}
 
 

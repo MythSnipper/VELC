@@ -41,16 +41,16 @@ void donut_run() {
         memset((void*)z,0,14080);
         for(j=0.0; j < 6.28; j += 0.07) {
             for(i=0.0; i < 6.28; i += 0.02) {
-                float64 c = sin_f64(i);
-                float64 d = cos_f64(j);
-                float64 e = sin_f64(A);
-                float64 f = sin_f64(j);
-                float64 g = cos_f64(A);
+                float64 c = sin_fast_f64(i);
+                float64 d = cos_fast_f64(j);
+                float64 e = sin_fast_f64(A);
+                float64 f = sin_fast_f64(j);
+                float64 g = cos_fast_f64(A);
                 float64 h = d + 2.0;
                 float64 D = 1.0 / (c * h * e + f * g + 5.0);
-                float64 l = cos_f64(i);
-                float64 m = cos_f64(B);
-                float64 n = sin_f64(B);
+                float64 l = cos_fast_f64(i);
+                float64 m = cos_fast_f64(B);
+                float64 n = sin_fast_f64(B);
                 float64 t = c * h * g - f * e;
                 
                 int64 x = (int64)(40.0 + 30.0 * D * (l * h * m - t * n));
@@ -598,7 +598,6 @@ float64 sin_f64(float64 x) {
     );
 }
 
-
 //cos using taylor series
 float64 cos_f64(float64 x) {
     x = constrain_angle(x);
@@ -660,6 +659,51 @@ float64 tan_f64(float64 x) {
 
     return s / c;
 }
+
+
+
+float64 sin_fast_f64(float64 x) {
+    x = constrain_angle(x);
+
+    float64 sign = 1.0;
+    if(x < 0.0) {
+        x = -x;
+        sign = -1.0;
+    }
+    
+    float64 a = x * (3.14159265358979323846264338327950288 - x);
+
+    float64 n = 16.0 * a;
+    float64 d = 5.0 * 3.14159265358979323846264338327950288 * 3.14159265358979323846264338327950288 - 4.0 * a;
+
+    return sign * (n / d);
+}
+
+float64 cos_fast_f64(float64 x) {
+    return sin_fast_f64(x + 1.57079632679489661923132169163975144);
+}
+
+float64 tan_fast_f64(float64 x) {
+    float64 s = sin_fast_f64(x);
+    float64 c = cos_fast_f64(x);
+
+    return s / c;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -765,9 +809,22 @@ char buf[1024];
 uint64 main() {
 
     donut_run();
+    death();
 
     return 0;
 }
 
+
+void death(){
+    for(int64 i=-20;i<=20;i++){
+        float64 kill_me = (float64)i;
+        
+        float64 I_do_not = sin_f64(kill_me);
+        float64 deserve_to = sin_fast_f64(kill_me);
+        float64 live = deserve_to - I_do_not;
+
+        print_f64_ln(live);
+    }
+}
 
 

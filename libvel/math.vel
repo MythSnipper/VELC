@@ -130,7 +130,6 @@ float64 sin_f64(float64 x) {
     );
 }
 
-
 //cos using taylor series
 float64 cos_f64(float64 x) {
     x = constrain_angle(x);
@@ -192,6 +191,51 @@ float64 tan_f64(float64 x) {
 
     return s / c;
 }
+
+
+
+float64 sin_fast_f64(float64 x) {
+    x = constrain_angle(x);
+
+    float64 sign = 1.0;
+    if(x < 0.0) {
+        x = -x;
+        sign = -1.0;
+    }
+    
+    float64 a = x * (PI - x);
+
+    float64 n = 16.0 * a;
+    float64 d = 5.0 * PI * PI - 4.0 * a;
+
+    return sign * (n / d);
+}
+
+float64 cos_fast_f64(float64 x) {
+    return sin_fast_f64(x + HALF_PI);
+}
+
+float64 tan_fast_f64(float64 x) {
+    float64 s = sin_fast_f64(x);
+    float64 c = cos_fast_f64(x);
+
+    return s / c;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
